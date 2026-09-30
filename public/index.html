@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="ja" class="no-js">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>DARA — 友達だけのちいさな場所</title>
+  <meta name="description" content="DARAは、友達だけが集まる3Dでかわいいグループ型のスレッドSNS。文字数の制限なしで、写真も付けて、その場の「いま」を気軽に残せる。">
+  <meta name="theme-color" content="#000000">
+  <meta property="og:title" content="DARA — 友達だけのちいさな場所">
+  <meta property="og:description" content="友達だけが集まる、3Dでかわいいグループ型のスレッドSNS">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="assets/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="assets/favicon.png" type="image/png">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="modulepreload" href="vendor/three/three.module.min.js">
+  <link rel="modulepreload" href="js/sdf.js">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three/three.module.min.js",
+        "three/addons/": "./vendor/three/addons/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <header class="nav">
+    <a class="nav__logo" href="#home"><img src="assets/logo.png" alt="DARA" width="120" height="54"></a>
+    <nav class="nav__links" aria-label="Menu">
+      <a href="#home">Home</a><span aria-hidden="true">/</span>
+      <a href="#about">About</a><span aria-hidden="true">/</span>
+      <a href="#rooms">Rooms</a><span aria-hidden="true">/</span>
+      <a href="#play">Play</a><span aria-hidden="true">/</span>
+      <a href="#features">Features</a>
+    </nav>
+    <div class="nav__right">
+      <div class="lang" role="group" aria-label="Language">
+        <button type="button" data-lang="ja" aria-pressed="true">JP</button>
+        <span aria-hidden="true">|</span>
+        <button type="button" data-lang="en" aria-pressed="false">EN</button>
+      </div>
+      <a class="pearl-btn pearl-btn--sm" href="#start" data-i18n="nav.start">はじめる</a>
+    </div>
+  </header>
+
+  <main>
+    <!-- HOME ------------------------------------------------------------- -->
+    <section id="home" class="hero">
+      <canvas id="hero-canvas" aria-hidden="true"></canvas>
+      <img class="hero__fallback" src="assets/logo.png" alt="" aria-hidden="true">
+      <h1 class="hero__title">
+        <span class="sr-only">DARA </span>
+        <span data-i18n="hero.title"><span class="nw">友達だけの</span><span class="nw">ちいさな場所</span></span>
+      </h1>
+      <a class="scroll-down" href="#about"><span>Scroll down</span><i aria-hidden="true"></i></a>
+    </section>
+
+    <!-- ABOUT ------------------------------------------------------------ -->
+    <section id="about" class="section about">
+      <p class="eyebrow reveal">About</p>
+      <h2 class="about__title reveal" data-i18n="about.title">いつもの仲間と</h2>
+      <ul class="about__lines">
+        <li class="reveal" data-i18n="about.l1">知らない人はいない</li>
+        <li class="reveal" data-i18n="about.l2">タイムラインに流されない</li>
+        <li class="reveal" data-i18n="about.l3">いつものメンバーで話せる</li>
+      </ul>
+
+      <div class="icons reveal">
+        <div class="icons__stage"><canvas id="icons-canvas" aria-hidden="true"></canvas></div>
+        <ul class="icons__labels">
+          <li><b data-i18n="about.i1">招待制</b><span data-i18n="about.i1d"><span class="nw">招待コードで</span><span class="nw">登録</span></span></li>
+          <li><b data-i18n="about.i2">雑談</b><span data-i18n="about.i2d"><span class="nw">文字数の</span><span class="nw">制限なし</span></span></li>
+          <li><b data-i18n="about.i3">写真</b><span data-i18n="about.i3d"><span class="nw">1回に</span><span class="nw">4枚まで</span></span></li>
+          <li><b data-i18n="about.i4">秘密</b><span data-i18n="about.i4d"><span class="nw">メンバー以外は</span><span class="nw">見られない</span></span></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ROOMS ------------------------------------------------------------ -->
+    <section id="rooms" class="section rooms">
+      <div class="section__head">
+        <p class="eyebrow eyebrow--wide reveal">Rooms</p>
+        <h2 class="section__title reveal" data-i18n="rooms.title">いろんな部屋がある</h2>
+        <p class="section__lead reveal" data-i18n="rooms.lead"><span class="nw">友達を選んで</span><span class="nw">部屋をつくる。</span><span class="nw">部屋ごとに</span><span class="nw">まるいキャラクターが</span><span class="nw">住んでいます</span></p>
+      </div>
+      <div class="rooms__stage">
+        <canvas id="rooms-canvas" aria-hidden="true"></canvas>
+        <p class="rooms__label" id="rooms-label" aria-live="polite"></p>
+      </div>
+      <p class="hint" data-i18n="rooms.hint">さわってみて</p>
+    </section>
+
+    <!-- PLAY ------------------------------------------------------------- -->
+    <section id="play" class="section play">
+      <div class="section__head">
+        <p class="eyebrow eyebrow--wide reveal">Play</p>
+        <h2 class="section__title reveal" data-i18n="play.title">部屋をのぞいてみる</h2>
+        <p class="section__lead reveal" data-i18n="play.lead"><span class="nw">カードをタップすると</span><span class="nw">次の部屋へ。</span><span class="nw">メッセージも</span><span class="nw">送ってみて</span></p>
+      </div>
+
+      <div class="play__grid">
+        <div class="stack-wrap reveal">
+          <div class="stack" id="stack" role="button" tabindex="0" aria-label="次の部屋を見る" data-i18n-attr="aria-label:play.next">
+            <!-- JS でカードを並べる -->
+          </div>
+        </div>
+
+        <div class="phone reveal" id="phone">
+          <div class="phone__screen">
+            <div class="status"><span>9:41</span><span class="status__icons" aria-hidden="true"><i></i><i></i><i></i></span></div>
+            <div class="chat-head">
+              <span class="chat-head__back" aria-hidden="true"></span>
+              <span class="avatar" id="chat-avatar" aria-hidden="true">R</span>
+              <span class="chat-head__name" id="chat-name">週末ドライブ部</span>
+              <span class="chat-head__more" aria-hidden="true"><i></i><i></i><i></i></span>
+            </div>
+            <ol class="chat" id="chat" aria-live="polite"></ol>
+            <form class="composer" id="composer" autocomplete="off">
+              <label class="sr-only" for="composer-input" data-i18n="play.inputLabel">メッセージ</label>
+              <input id="composer-input" type="text" maxlength="60" placeholder="メッセージを入力" data-i18n-attr="placeholder:play.placeholder">
+              <button class="pearl-btn pearl-btn--send" type="submit" data-i18n="play.send">送信</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FEATURES --------------------------------------------------------- -->
+    <section id="features" class="section features">
+      <div class="section__head">
+        <p class="eyebrow eyebrow--wide reveal">Features</p>
+        <h2 class="section__title reveal" data-i18n="features.title">できること</h2>
+      </div>
+
+      <ul class="feature-grid">
+        <li class="feature reveal" style="--c:var(--pink)"><span class="feature__pearl"></span><h3 data-i18n="f1">文字数の制限なし</h3><p data-i18n="f1d"><span class="nw">短いひとことでも、</span><span class="nw">長い話でも、</span><span class="nw">写真だけでもいい</span></p></li>
+        <li class="feature reveal" style="--c:var(--blue)"><span class="feature__pearl"></span><h3 data-i18n="f2">写真は4枚まで</h3><p data-i18n="f2d"><span class="nw">端末で自動的に</span><span class="nw">小さくしてから送るので</span><span class="nw">軽い</span></p></li>
+        <li class="feature reveal" style="--c:var(--mint)"><span class="feature__pearl"></span><h3 data-i18n="f3">スレッドとコメント</h3><p data-i18n="f3d"><span class="nw">1つの投稿に、</span><span class="nw">みんながコメントで</span><span class="nw">続けられる</span></p></li>
+        <li class="feature reveal" style="--c:var(--yellow)"><span class="feature__pearl"></span><h3 data-i18n="f4">友達だけのグループ</h3><p data-i18n="f4d"><span class="nw">名前やIDで検索して申請。</span><span class="nw">承認されたら友達に</span></p></li>
+        <li class="feature reveal" style="--c:var(--purple)"><span class="feature__pearl"></span><h3 data-i18n="f5">数秒ごとに自動更新</h3><p data-i18n="f5d"><span class="nw">開いたままで</span><span class="nw">新しいコメントが届く</span></p></li>
+        <li class="feature reveal" style="--c:var(--orange)"><span class="feature__pearl"></span><h3 data-i18n="f6">動きを減らす設定に対応</h3><p data-i18n="f6d"><span class="nw">3Dの動きが</span><span class="nw">苦手なときも安心</span></p></li>
+      </ul>
+
+      <div class="subhead reveal">
+        <h3 class="subhead__title" data-i18n="steps.title">はじめかた</h3>
+      </div>
+      <ol class="steps">
+        <li class="step reveal" style="--c:var(--pink)"><span class="step__num">1</span><p data-i18n="s1">招待コードで登録</p></li>
+        <li class="step reveal" style="--c:var(--blue)"><span class="step__num">2</span><p data-i18n="s2">友達を申請</p></li>
+        <li class="step reveal" style="--c:var(--mint)"><span class="step__num">3</span><p data-i18n="s3">部屋をつくる</p></li>
+        <li class="step reveal" style="--c:var(--yellow)"><span class="step__num">4</span><p data-i18n="s4">スレッドを立てる</p></li>
+        <li class="step reveal" style="--c:var(--purple)"><span class="step__num">5</span><p data-i18n="s5">みんなでコメント</p></li>
+      </ol>
+
+      <div class="subhead reveal">
+        <h3 class="subhead__title" data-i18n="nots.title">やらないこと</h3>
+      </div>
+      <ul class="nots">
+        <li class="not reveal" data-i18n="n1"><span class="nw">不特定多数への</span><span class="nw">公開や拡散</span></li>
+        <li class="not reveal" data-i18n="n2"><span class="nw">いいね数や</span><span class="nw">フォロワー数の競争</span></li>
+        <li class="not reveal" data-i18n="n3">広告</li>
+        <li class="not reveal" data-i18n="n4"><span class="nw">ごちゃついた</span><span class="nw">画面</span></li>
+      </ul>
+    </section>
+
+    <!-- START ------------------------------------------------------------ -->
+    <section id="start" class="cta">
+      <div class="cta__glow" aria-hidden="true"></div>
+      <img class="cta__logo reveal" src="assets/logo.png" alt="" width="240" height="108">
+      <h2 class="cta__title reveal" data-i18n="cta.title"><span class="nw">仲間だけで</span><span class="nw">だらだら話そう</span></h2>
+      <p class="section__lead reveal" data-i18n="cta.lead"><span class="nw">招待コードを持っている人は</span><span class="nw">ここから登録できます</span></p>
+      <a class="pearl-btn pearl-btn--lg reveal" id="app-link" href="#" data-i18n="cta.button">部屋をのぞく</a>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <img src="assets/logo.png" alt="DARA" width="84" height="38">
+    <small>© 2026 DARA</small>
+  </footer>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
