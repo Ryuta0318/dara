@@ -192,3 +192,78 @@ h1,h2,h3{text-wrap:balance; margin:0}
 .scan video{display:block; width:100%; aspect-ratio:1; object-fit:cover; border-radius:22px; background:#000; margin-bottom:10px}
 .pcard{display:flex; flex-direction:column; align-items:center; text-align:center; gap:10px; padding:34px 8px}
 .back2{background:none; border:0; color:var(--sub); font:inherit; font-weight:800; padding:8px 4px; cursor:pointer}
+
+/* ---- 部屋の色（12色）と模様 ---- */
+.dk{color:#fff !important}
+.tile.dk .tfoot,.tile.dk .tname{color:#fff}
+.banner.dk .back{color:#fff}
+.banner.dk .pill{background:rgba(0,0,0,.35); color:#fff; box-shadow:inset 0 1px 0 rgba(255,255,255,.25)}
+.banner.pt1,.rpv-card.pt1{background-image:radial-gradient(circle at 25% 0%,rgba(255,255,255,.8),rgba(255,255,255,0) 55%),radial-gradient(rgba(255,255,255,.35) 18%,transparent 20%),linear-gradient(170deg,var(--l),var(--c) 58%,var(--d)); background-size:auto,22px 22px,auto}
+.banner.pt2,.rpv-card.pt2{background-image:radial-gradient(circle at 25% 0%,rgba(255,255,255,.8),rgba(255,255,255,0) 55%),repeating-linear-gradient(135deg,rgba(255,255,255,.22) 0 12px,transparent 12px 26px),linear-gradient(170deg,var(--l),var(--c) 58%,var(--d))}
+.banner.pt3,.rpv-card.pt3{background-image:radial-gradient(circle at 25% 0%,rgba(255,255,255,.8),rgba(255,255,255,0) 55%),radial-gradient(circle at 20% 70%,rgba(255,255,255,.75) 0 2px,transparent 3px),radial-gradient(circle at 70% 30%,rgba(255,255,255,.75) 0 3px,transparent 4px),radial-gradient(circle at 88% 78%,rgba(255,255,255,.75) 0 2px,transparent 3px),linear-gradient(170deg,var(--l),var(--c) 58%,var(--d))}
+.banner.pt4,.rpv-card.pt4{background-image:radial-gradient(circle at 25% 0%,rgba(255,255,255,.8),rgba(255,255,255,0) 55%),conic-gradient(rgba(255,255,255,.22) 25%,transparent 0 50%,rgba(255,255,255,.22) 0 75%,transparent 0),linear-gradient(170deg,var(--l),var(--c) 58%,var(--d)); background-size:auto,34px 34px,auto}
+.bdesc{margin:-10px 0 16px; font-size:14px; font-weight:800; opacity:.78; max-width:68%; text-wrap:balance}
+
+/* ---- 部屋のキャラクター ---- */
+.stamp{display:inline-block; flex:0 0 auto; line-height:0; filter:drop-shadow(0 3px 5px rgba(0,0,0,.45))}
+.stamp svg{display:block; width:100%; height:100%; overflow:visible}
+.rchar.bob{animation:bob 2.8s ease-in-out infinite}
+.tile .rchar{position:absolute; right:12px; top:12px}
+.banner>.rchar{position:absolute; right:18px; top:16px}
+
+/* ---- リアクションとスタンプ ---- */
+.stampbig{margin:6px 0 2px}
+.rxbar{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px}
+.rx{display:inline-flex; align-items:center; gap:5px; padding:4px 10px 4px 6px; border-radius:999px; background:var(--card2); color:var(--ink); font-size:13px; font-weight:900; box-shadow:inset 0 0 0 1px var(--line); cursor:pointer; transition:transform .15s cubic-bezier(.2,1.4,.4,1)}
+.rx:active{transform:scale(.92)}
+.rx .stamp{filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))}
+.rx.me{background:linear-gradient(#3a3450,#26223a); box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.55)}
+.rx.add{color:var(--sub); padding:4px 12px 4px 8px}
+.rx.add svg{width:20px; height:20px}
+
+/* ---- スタンプのエディタ・選択 ---- */
+.sted{padding-bottom:6px}
+.pvwrap{display:flex; flex-direction:column; align-items:center; gap:10px; padding:10px 0 4px}
+.pv{display:grid; place-items:center; width:100%; padding:18px 0; border-radius:26px; background:repeating-conic-gradient(#14131a 0 25%,#0e0d12 0 50%) 0 0/22px 22px; box-shadow:inset 0 0 0 1px var(--line)}
+.strip{display:flex; gap:8px; overflow-x:auto; padding:4px 2px 8px; scrollbar-width:none; -webkit-overflow-scrolling:touch}
+.strip::-webkit-scrollbar{display:none}
+.pk{flex:0 0 auto; padding:5px; border-radius:16px; background:var(--card2); box-shadow:inset 0 0 0 1px var(--line); cursor:pointer}
+.pk.on{box-shadow:inset 0 0 0 2.5px #fff; background:#2a2736}
+.pk .none{display:grid; place-items:center; width:46px; height:46px; font-size:12px; font-weight:800; color:var(--sub)}
+.chips{display:flex; flex-wrap:wrap; gap:6px}
+.chip{padding:8px 14px; border-radius:999px; background:var(--card2); color:var(--ink); font-size:13px; font-weight:800; box-shadow:inset 0 0 0 1px var(--line); cursor:pointer}
+.chip.on{background:#fff; color:#17131f; box-shadow:none}
+.swrow{display:flex; flex-wrap:wrap; gap:8px; align-items:center}
+.sw{position:relative; width:34px; height:34px; border-radius:50%; cursor:pointer; box-shadow:inset 0 -3px 5px rgba(0,0,0,.25),0 0 0 1px rgba(255,255,255,.18); overflow:hidden}
+.sw.small{width:28px; height:28px}
+.sw.on{box-shadow:0 0 0 2.5px #0f0e13,0 0 0 5px #fff}
+.sw.custom{background:conic-gradient(#ff6b6b,#ffd93d,#6bff95,#4dd2ff,#b16bff,#ff6b6b)}
+.sw.custom input{position:absolute; inset:-6px; width:48px; height:48px; opacity:0; cursor:pointer}
+.twocol{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:4px}
+.rotrow{display:flex; align-items:center; gap:12px}
+.rotrow input[type=range]{flex:1; accent-color:#fff}
+.picker .lbl:first-child{margin-top:0}
+.rowlbl{display:flex; align-items:center; justify-content:space-between}
+.mini{padding:5px 12px; border-radius:999px; background:#fff; color:#17131f; font-size:12px; font-weight:900; cursor:pointer}
+.pgrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(64px,1fr)); gap:8px}
+.pcell{display:grid; place-items:center; padding:5px; border-radius:18px; background:var(--card2); box-shadow:inset 0 0 0 1px var(--line); cursor:pointer}
+.pcell:active{transform:scale(.92)}
+.pwrap{position:relative}
+.pcopy{position:absolute; right:-2px; top:-2px; width:24px; height:24px; border-radius:50%; background:#fff; color:#17131f; font-weight:900; font-size:15px; line-height:24px; text-align:center; cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,.5)}
+
+/* ---- スタンプの一覧（タブ） ---- */
+.sgrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(84px,1fr)); gap:10px; margin:10px 0 20px}
+.scell{display:grid; place-items:center; aspect-ratio:1; border-radius:24px; background:var(--card); box-shadow:inset 0 0 0 1px var(--line); cursor:pointer}
+.scell.still{cursor:default}
+.scell.new{border:2px dashed rgba(255,255,255,.22); background:transparent; box-shadow:none; color:var(--sub); font-weight:900; align-content:center; gap:2px}
+.scell.new .plus{font-size:26px; line-height:1}
+
+/* ---- 部屋のカスタマイズ ---- */
+.rpv{padding:6px 0 2px}
+.rpv-card{position:relative; display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:108px; padding:16px 18px; border-radius:30px; color:#17131f;
+  background:radial-gradient(circle at 25% 0%,rgba(255,255,255,.8),rgba(255,255,255,0) 55%),linear-gradient(170deg,var(--l),var(--c) 58%,var(--d)); box-shadow:inset 0 -14px 24px rgba(0,0,0,.16),0 14px 30px rgba(0,0,0,.5)}
+.rpv-text{min-width:0}
+.rpv-text b{display:block; font-size:22px; font-weight:900; line-height:1.2; overflow-wrap:anywhere}
+.rpv-text small{display:block; margin-top:4px; font-size:13px; font-weight:800; opacity:.75}
+@media (prefers-reduced-motion: reduce){ .rchar.bob{animation:none} .rx{transition:none} }
+.banner h1{text-wrap:balance; overflow-wrap:anywhere}

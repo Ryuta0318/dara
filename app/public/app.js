@@ -5,7 +5,8 @@ var app = document.getElementById('app');
 var overlay = document.getElementById('overlay');
 var toastEl = document.getElementById('toast');
 
-var st = { me:null, users:{} };
+var st = { me:null, users:{}, stamps:{} };
+var S = window.DARAStamp;
 var cur = null;
 var pending = null;      // ログイン前に開かれた招待リンク
 var inviteFor = null;    // つくったばかりの部屋（招待シートを開く）
@@ -48,6 +49,10 @@ function ago(ts){
   if(s < 172800) return '昨日';
   var d = new Date(ts); return (d.getMonth()+1) + '/' + d.getDate();
 }
+function cacheStamps(m){ if(m) Object.keys(m).forEach(function(k){ st.stamps[k] = m[k]; }); }
+function stampEl(id, size){
+  return S.render(S.resolve(id, st.stamps) || {shape:0, color:10, face:-1, text:'?', tsize:2}, size);
+}
 function cacheUsers(u){ if(u) Object.keys(u).forEach(function(k){ st.users[k] = u[k]; }); }
 function user(id){ return st.users[id] || {id:id, name:'ユーザー', handle:'', color:0, avatar:null}; }
 function imgUrl(id){ return '/api/images/' + id; }
@@ -56,6 +61,7 @@ var ERR = {
   login:'IDまたはパスワードが違います', taken:'このIDはすでに使われています', invite:'招待コードが違います',
   handle:'IDは半角の英数字と_で3〜20文字にしてください', password:'パスワードは8文字以上にしてください', name:'名前を入力してください',
   too_many:'試行が多すぎます しばらくしてからお試しください', too_large:'画像が大きすぎます', type:'この画像は使えません', empty:'内容を入力してください',
+  limit:'スタンプは100個までです', stamp:'このスタンプは使えませんでした', too_many_reacts:'1つの投稿に押せるスタンプは10個までです',
   no_room:'そのコードの部屋が見つかりません', user:'ユーザーが見つかりません', not_found:'見つかりませんでした'
 };
 function errMsg(e){ return (e && ERR[e.code]) || '通信できませんでした もう一度お試しください'; }
@@ -196,6 +202,15 @@ function svgPhoto(){
   return s;
 }
 
+function svgSmile(){
+  var s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('width', '24'); s.setAttribute('height', '24');
+  s.setAttribute('fill', 'none'); s.setAttribute('stroke', 'currentColor'); s.setAttribute('stroke-width', '2.2');
+  s.setAttribute('stroke-linecap', 'round'); s.setAttribute('stroke-linejoin', 'round');
+  s.innerHTML = '<circle cx="12" cy="12" r="9"></circle><path d="M8 14c1.2 2 6.8 2 8 0"></path><circle cx="9" cy="10" r=".6"></circle><circle cx="15" cy="10" r=".6"></circle>';
+  return s;
+}
+
 /* ---------- sheet / confirm / lightbox ---------- */
 function openSheet(title, content, onClose){
   var back = h('div', {class:'sheet-back'}), closed = false;
@@ -222,6 +237,8 @@ function lightbox(src){
   var lb = h('div', {class:'lightbox', role:'dialog', 'aria-label':'写真', onclick:function(){ lb.remove(); }}, h('img', {src:src, alt:'写真'}));
   overlay.appendChild(lb);
 }
+
+window.DARAUI = {h:h, api:api, toast:toast, openSheet:openSheet, askConfirm:askConfirm, errMsg:errMsg, cacheStamps:cacheStamps, stampCache:function(){ return st.stamps; }};
 
 /* ---------- images ---------- */
 function shrink(file, max, q){
@@ -268,6 +285,12 @@ function makeComposer(o){
   var thumbs = h('div', {class:'thumbs'});
   var file = h('input', {type:'file', accept:'image/*', multiple:true, hidden:true});
   var photoBtn = h('button', {type:'button', class:'icobtn', 'aria-label':'写真を追加', onclick:function(){ file.click(); }}, svgPhoto());
+  var stampBtn = o.onStamp ? h('button', {type:'button', class:'icobtn', 'aria-label':'スタンプを送る', onclick:function(){
+    window.DARAStampUI.openPicker(function(id, spec){
+      if(spec) { var m = {}; m[id] = spec; cacheStamps(m); }
+      Promise.resolve(o.onStamp(id)).then(function(){ if(o.onDone) o.onDone(); }).catch(function(e){ toast(errMsg(e)); });
+    });
+  }}, svgSmile()) : null;
   var send = h('button', {type:'button', class:'b3 sm', text:o.submitLabel, disabled:true, onclick:submit});
   function sync(){ send.disabled = busy || (!ta.value.trim() && !imgs.length); }
   ta.addEventListener('input', function(){ ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 180) + 'px'; sync(); });
@@ -301,7 +324,7 @@ function makeComposer(o){
       toast(errMsg(e)); busy = false; send.textContent = o.submitLabel; sync();
     }
   }
-  var el = h('div', {class:'comp'}, thumbs, h('div', {class:'crow'}, photoBtn, ta, send), file);
+  var el = h('div', {class:'comp'}, thumbs, h('div', {class:'crow'}, photoBtn, stampBtn, ta, send), file);
   return {el:el, focus:function(){ ta.focus(); }};
 }
 
@@ -314,13 +337,37 @@ function poll(fn, ms){
 }
 
 /* ---------- shared post ---------- */
+function react(tgt, stamp, done){
+  api('/api/react', {body:{tgt:tgt, stamp:stamp}}).then(function(r){ cacheStamps(r.stamps); if(done) done(); }).catch(function(e){ toast(errMsg(e)); });
+}
+function reactBar(p, o){
+  if(!o.onReact) return null;
+  var bar = h('div', {class:'rxbar'});
+  (p.reacts || []).forEach(function(r){
+    var b = h('button', {type:'button', class:'rx' + (r.me ? ' me' : ''), 'aria-pressed':r.me ? 'true' : 'false', 'aria-label':'スタンプ ' + r.n + '人'}, stampEl(r.s, 26), h('span', {text:r.n}));
+    b.addEventListener('click', function(e){ e.stopPropagation(); react(p.id, r.s, o.onReact); });
+    bar.appendChild(b);
+  });
+  var add = h('button', {type:'button', class:'rx add', 'aria-label':'スタンプをおす'}, svgSmile(), h('span', {text:'＋'}));
+  add.addEventListener('click', function(e){
+    e.stopPropagation();
+    window.DARAStampUI.openPicker(function(id, spec){
+      if(spec){ var m = {}; m[id] = spec; cacheStamps(m); }
+      react(p.id, id, o.onReact);
+    });
+  });
+  bar.appendChild(add);
+  return bar;
+}
 function postEl(p, o){
   o = o || {};
   var body = h('div', null,
     h('div', {class:'who'}, h('b', {text:user(p.author).name}), h('span', {class:'ago', text:ago(p.ts)})),
     p.text ? h('div', {class:'ptxt', text:p.text}) : null,
+    p.stamp ? h('div', {class:'stampbig'}, stampEl(p.stamp, 104)) : null,
     media(p.images),
     o.count !== undefined ? h('div', {class:'meta', text:'コメント ' + o.count}) : null,
+    reactBar(p, o),
     o.extra || null);
   var el = h('article', {class:'post' + (o.click ? ' tap' : '') + (o.big ? ' big' : '')}, avatar(p.author, 44), body);
   if(o.click){
@@ -405,7 +452,7 @@ function profileSheet(){
 function homeView(tab){
   var body = h('div');
   var nav = h('nav', {class:'nav', 'aria-label':'メニュー'});
-  var groups = null, fr = null, lastSig = '', friendsUI = null, killHero = null;
+  var groups = null, fr = null, lastSig = '', friendsUI = null, stampsUI = null, killHero = null;
 
   var heroBox = tab === 'groups' ? h('div', {class:'hero3d'}) : null;
   if(heroBox) killHero = mountHero(heroBox);
@@ -419,7 +466,8 @@ function homeView(tab){
     var n = fr ? fr.incoming.length : 0;
     var gb = h('a', {href:'#/', class:'b3 tab' + (tab === 'groups' ? ' ink' : ' soft'), text:'グループ', style:'text-decoration:none'});
     var fb = h('a', {href:'#/friends', class:'b3 tab' + (tab === 'friends' ? ' ink' : ' soft'), style:'text-decoration:none'}, '友達', n ? h('span', {class:'dot', text:n}) : null);
-    nav.appendChild(gb); nav.appendChild(fb);
+    var sb = h('a', {href:'#/stamps', class:'b3 tab' + (tab === 'stamps' ? ' ink' : ' soft'), text:'スタンプ', style:'text-decoration:none'});
+    nav.appendChild(gb); nav.appendChild(fb); nav.appendChild(sb);
   }
   function drawGroups(){
     body.innerHTML = '';
@@ -431,9 +479,8 @@ function homeView(tab){
     }
     var grid = h('div', {class:'grid'});
     groups.forEach(function(g){
-      var pal = g.color % 6;
-      var t = h('button', {type:'button', class:'tile pal' + pal + (pal === 3 ? ' p3' : ''), onclick:function(){ location.hash = '#/g/' + g.id; }},
-        orb(58, pal), h('div', {class:'tname', text:g.name}),
+      var t = h('button', {type:'button', class:'tile' + (S.roomDark(g) ? ' dk' : ''), style:S.roomVars(g), onclick:function(){ location.hash = '#/g/' + g.id; }},
+        S.roomChar(g, 64, false), h('div', {class:'tname', text:g.name}),
         h('div', {class:'tfoot', text:g.members.length + '人  ' + (g.lastText ? g.lastText : 'まだ投稿がありません')}));
       tilt(t); grid.appendChild(t);
     });
@@ -514,10 +561,38 @@ function homeView(tab){
         h('button', {type:'button', class:'b3 sm soft', text:'リンクを共有', onclick:function(){ shareLink('DARA', 'DARAで友達になろう', link); }})));
     return {el:h('div', null, h('h2', {class:'sec', text:'友達'}), addCard, input, results, lists), update:function(){ drawRes(); drawLists(); }};
   }
+  function buildStamps(){
+    var wrap = h('div'), grid = h('div', {class:'sgrid'}), mine = null;
+    function load(){
+      api('/api/stamps').then(function(r){
+        mine = r.stamps; var m = {}; mine.forEach(function(x){ m[x.id] = x.spec; }); cacheStamps(m); draw();
+      }).catch(function(){});
+    }
+    function draw(){
+      grid.innerHTML = '';
+      grid.appendChild(h('button', {type:'button', class:'scell new', onclick:function(){ window.DARAStampUI.openEditor(null, {onSaved:load}); }}, h('span', {class:'plus', text:'＋'}), h('small', {text:'つくる'})));
+      (mine || []).forEach(function(x){
+        grid.appendChild(h('button', {type:'button', class:'scell', 'aria-label':'スタンプをなおす', onclick:function(){
+          window.DARAStampUI.openEditor(x.spec, {id:x.id, onSaved:load, onDeleted:load});
+        }}, S.render(x.spec, 72)));
+      });
+    }
+    var bi = h('div', {class:'sgrid'});
+    S.BUILTIN_IDS.forEach(function(id){ bi.appendChild(h('div', {class:'scell still'}, S.render(S.resolve(id), 72))); });
+    wrap.appendChild(h('h2', {class:'sec', text:'じぶんのスタンプ'}));
+    wrap.appendChild(h('div', {class:'hint', text:'形・色・顔・文字を組み合わせて、いくつでもつくれます（100個まで）'}));
+    wrap.appendChild(grid);
+    wrap.appendChild(h('h2', {class:'sec', text:'はじめからあるスタンプ'}));
+    wrap.appendChild(bi);
+    load(); draw();
+    return {el:wrap};
+  }
   function toMap(arr){ var m = {}; arr.forEach(function(u){ m[u.id] = u; }); return m; }
   function draw(){
     drawNav();
-    if(tab === 'friends'){
+    if(tab === 'stamps'){
+      if(!stampsUI){ stampsUI = buildStamps(); body.innerHTML = ''; body.appendChild(stampsUI.el); }
+    }else if(tab === 'friends'){
       if(!friendsUI){ friendsUI = buildFriends(); body.innerHTML = ''; body.appendChild(friendsUI.el); }
       friendsUI.update();
     }else drawGroups();
@@ -588,7 +663,10 @@ function groupInfoSheet(gid, info){
     }catch(e){ return; }
     box.innerHTML = '';
     var code = g.group.code, gname = g.group.name;
-    box.appendChild(h('div', {class:'lbl', style:'margin-top:0', text:'招待コード'}));
+    box.appendChild(h('button', {type:'button', class:'b3 soft block', text:'部屋の名前・色・キャラクターを変える', onclick:function(){
+      close(); window.DARAStampUI.openRoomStyle(g.group, function(){ if(info) info(); });
+    }}));
+    box.appendChild(h('div', {class:'lbl', text:'招待コード'}));
     box.appendChild(h('div', {class:'code', text:fmtCode(code)}));
     box.appendChild(h('div', {class:'hint', text:'このコードを知っている人は、友達でなくても入れます'}));
     box.appendChild(h('div', {class:'btnrow'},
@@ -631,26 +709,27 @@ function groupView(gid){
 
   function draw(){
     if(!group) return;
-    var pal = group.color % 6;
-    banner.className = 'banner pal' + pal + (pal === 3 ? ' p3' : '');
+    banner.className = 'banner pt' + (group.pattern || 0) + (S.roomDark(group) ? ' dk' : '');
+    banner.style.cssText = S.roomVars(group);
     banner.innerHTML = '';
     var stack = h('div', {class:'stack'});
     group.members.slice(0, 5).forEach(function(id){ stack.appendChild(avatar(id, 34)); });
     banner.appendChild(h('button', {type:'button', class:'back', text:'‹ 戻る', onclick:function(){ location.hash = '#/'; }}));
-    banner.appendChild(orb(104, pal, {bob:true}));
+    banner.appendChild(S.roomChar(group, 96, true));
     banner.appendChild(h('h1', {text:group.name}));
+    if(group.desc) banner.appendChild(h('div', {class:'bdesc', text:group.desc}));
     banner.appendChild(h('div', {class:'bfoot'}, stack, h('button', {type:'button', class:'pill', text:'メンバー ' + group.members.length + '人', onclick:function(){ groupInfoSheet(gid, load); }})));
     feed.innerHTML = '';
     if(!threads){ feed.appendChild(h('div', {class:'hint', style:'padding:16px 4px', text:'読み込み中'})); return; }
     if(!threads.length) feed.appendChild(h('div', {class:'hint', style:'padding:16px 4px', text:'最初のスレッドを立ててみましょう'}));
     threads.forEach(function(t){
-      feed.appendChild(postEl(t, {count:t.count, click:function(){ location.hash = '#/t/' + t.id; }}));
+      feed.appendChild(postEl(t, {count:t.count, click:function(){ location.hash = '#/t/' + t.id; }, onReact:function(){ load(true); }}));
     });
   }
   async function load(force){
     try{
       var r = await Promise.all([api('/api/groups/' + gid), api('/api/groups/' + gid + '/threads')]);
-      cacheUsers(r[0].users); cacheUsers(r[1].users);
+      cacheUsers(r[0].users); cacheUsers(r[1].users); cacheStamps(r[1].stamps);
       var sig = JSON.stringify(r);
       if(sig === lastSig && force !== true) return;
       lastSig = sig; group = r[0].group; threads = r[1].threads; draw();
@@ -679,6 +758,7 @@ function threadView(tid){
   var comp = makeComposer({
     placeholder:'コメントする', submitLabel:'送信',
     onSubmit:function(text, ids){ if(!text && !ids.length) return Promise.resolve(); return api('/api/threads/' + tid + '/comments', {body:{text:text, images:ids}}); },
+    onStamp:function(id){ return api('/api/threads/' + tid + '/comments', {body:{stamp:id}}); },
     onDone:function(){ load(true); }
   });
   var dock = h('div', {class:'dock'}, comp.el);
@@ -698,7 +778,7 @@ function threadView(tid){
         try{ await api('/api/threads/' + tid, {method:'DELETE', body:{}}); location.hash = '#/g/' + t.gid; }catch(e){ toast(errMsg(e)); }
       }}));
     }
-    postBox.appendChild(postEl(t, {big:true, extra:extra}));
+    postBox.appendChild(postEl(t, {big:true, extra:extra, onReact:function(){ load(true); }}));
     list.innerHTML = '';
     list.appendChild(h('div', {class:'cdiv', text:'コメント ' + cs.length}));
     if(!cs.length) list.appendChild(h('div', {class:'hint', style:'padding:10px 4px', text:'最初のコメントを書いてみましょう'}));
@@ -711,13 +791,13 @@ function threadView(tid){
           try{ await api('/api/comments/' + c.id, {method:'DELETE', body:{}}); load(true); }catch(e){ toast(errMsg(e)); }
         }}));
       }
-      list.appendChild(postEl(c, {extra:ex}));
+      list.appendChild(postEl(c, {extra:ex, onReact:function(){ load(true); }}));
     });
   }
   async function load(force){
     try{
       var r = await api('/api/threads/' + tid);
-      cacheUsers(r.users);
+      cacheUsers(r.users); cacheStamps(r.stamps);
       var sig = JSON.stringify(r);
       if(sig === lastSig && force !== true) return;
       lastSig = sig; data = r; gid = r.thread.gid; draw();
@@ -764,9 +844,9 @@ function addView(handle){
 function joinView(code){
   var pg = linkPage(), body = pg.body;
   api('/api/join/' + encodeURIComponent(code)).then(function(r){
-    var g = r.group, pal = g.color % 6;
+    var g = r.group;
     body.innerHTML = '';
-    body.appendChild(orb(120, pal, {bob:true}));
+    body.appendChild(S.roomChar(g, 128, true));
     body.appendChild(h('div', {class:'hint', text:'この部屋に招待されています'}));
     body.appendChild(h('div', {style:'font-weight:900;font-size:24px', text:g.name}));
     body.appendChild(h('div', {class:'hint', text:g.count + '人がいます'}));
@@ -797,6 +877,7 @@ function render(){
   else if(p[0] === 'add' && p[1]) cur = addView(p[1]);
   else if(p[0] === 'join' && p[1]) cur = joinView(p[1]);
   else if(p[0] === 'friends') cur = homeView('friends');
+  else if(p[0] === 'stamps') cur = homeView('stamps');
   else cur = homeView('groups');
   app.appendChild(cur.el);
 }
