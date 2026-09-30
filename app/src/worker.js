@@ -70,6 +70,16 @@ function cleanSpec(s) {
   };
 }
 const STAMP_LIMIT = 100;
+// 本文から @ユーザーID を取り出す
+const handlesIn = (t) => [...new Set([...String(t || "").matchAll(/(?:^|[^a-z0-9_])@([a-z0-9_]{3,20})/g)].map((m) => m[1]))].slice(0, 10);
+const snip = (t, fallback) => (str(t, 60) || fallback || "");
+// 復旧コード（パスワードを忘れたとき用）：12文字
+function makeRecovery() {
+  const b = crypto.getRandomValues(new Uint8Array(12));
+  const c = [...b].map((x) => CODE_CHARS[x % CODE_CHARS.length]).join("");
+  return `${c.slice(0, 4)}-${c.slice(4, 8)}-${c.slice(8)}`;
+}
+const normRecovery = (v) => str(v, 40).toUpperCase().replace(/[\s-]/g, "");
 const builtinStamp = (v) => typeof v === "string" && /^b:[a-z0-9]{1,12}$/.test(v);
 
 export default {
@@ -121,6 +131,11 @@ export class Hub extends DurableObject {
       "ALTER TABLE threads ADD COLUMN edited INTEGER",
       "ALTER TABLE comments ADD COLUMN edited INTEGER",
       "ALTER TABLE users ADD COLUMN bio TEXT",
+      "ALTER TABLE users ADD COLUMN hide_read INTEGER DEFAULT 0",
+      "ALTER TABLE users ADD COLUMN recovery TEXT",
+      "ALTER TABLE threads ADD COLUMN pinned INTEGER DEFAULT 0",
+      "ALTER TABLE threads ADD COLUMN poll TEXT",
+      "ALTER TABLE comments ADD COLUMN parent TEXT",
     ]) {
       try {
         this.sql.exec(col);
@@ -133,6 +148,11 @@ export class Hub extends DurableObject {
     this.sql.exec("CREATE TABLE IF NOT EXISTS dms(id TEXT PRIMARY KEY, pk TEXT, author TEXT, body TEXT, imgs TEXT, stamp TEXT, ts INTEGER)");
     this.sql.exec("CREATE INDEX IF NOT EXISTS dm_pk ON dms(pk, ts)");
     this.sql.exec("CREATE TABLE IF NOT EXISTS dm_reads(uid TEXT, peer TEXT, ts INTEGER, PRIMARY KEY(uid,peer))");
+    this.sql.exec("CREATE TABLE IF NOT EXISTS notifs(id TEXT PRIMARY KEY, uid TEXT, kind TEXT, actor TEXT, gid TEXT, tid TEXT, peer TEXT, text TEXT, ts INTEGER, rd INTEGER DEFAULT 0)");
+    this.sql.exec("CREATE INDEX IF NOT EXISTS nf_uid ON notifs(uid, ts)");
+    this.sql.exec("CREATE TABLE IF NOT EXISTS blocks(a TEXT, b TEXT, ts INTEGER, PRIMARY KEY(a,b))");
+    this.sql.exec("CREATE TABLE IF NOT EXISTS reports(id TEXT PRIMARY KEY, reporter TEXT, kind TEXT, tgt TEXT, gid TEXT, reason TEXT, ts INTEGER, status TEXT DEFAULT 'open')");
+    this.sql.exec("CREATE TABLE IF NOT EXISTS votes(tid TEXT, uid TEXT, opt INTEGER, PRIMARY KEY(tid,uid))");
     for (const g of this.q("SELECT id FROM groups WHERE code IS NULL")) {
       this.run("UPDATE groups SET code=? WHERE id=?", this.newCode(), g.id);
     }
@@ -170,7 +190,7 @@ export class Hub extends DurableObject {
     const m = (req.headers.get("cookie") || "").match(/(?:^|;\s*)sr=([a-f0-9]{48})/);
     if (!m) return null;
     const s = this.one("SELECT uid FROM sessions WHERE tok=?", await sha(m[1]));
-    return s ? this.one("SELECT id,handle,name,color,avatar,bio FROM users WHERE id=?", s.uid) : null;
+    return s ? this.one("SELECT id,handle,name,color,avatar,bio,hide_read FROM users WHERE id=?", s.uid) : null;
   }
 
   async startSession(uid) {
@@ -218,6 +238,51 @@ export class Hub extends DurableObject {
     } catch {
       throw bad("json");
     }
+  }
+
+  isAdmin(u) {
+    const list = String((this.env && this.env.ADMIN_HANDLES) || "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
+    return !!u && list.includes(u.handle);
+  }
+  selfOut(u) {
+    return u ? { ...pub(u), hideRead: !!u.hide_read, admin: this.isAdmin(u) } : null;
+  }
+  // どちらかがブロックしているか
+  blockedPair(a, b) {
+    return !!this.one("SELECT 1 x FROM blocks WHERE (a=? AND b=?) OR (a=? AND b=?)", a, b, b, a);
+  }
+  blockedByMe(me, other) {
+    return !!this.one("SELECT 1 x FROM blocks WHERE a=? AND b=?", me, other);
+  }
+  myBlocks(me) {
+    return new Set(this.q("SELECT b FROM blocks WHERE a=?", me).map((r) => r.b));
+  }
+  // 通知をつくる（自分自身・ブロック関係の相手には送らない）
+  notify(uid, kind, actor, o = {}) {
+    if (!uid || uid === actor) return;
+    if (actor && this.blockedPair(uid, actor)) return;
+    this.run("INSERT INTO notifs(id,uid,kind,actor,gid,tid,peer,text,ts) VALUES(?,?,?,?,?,?,?,?,?)", rid(10), uid, kind, actor || "", o.gid || null, o.tid || null, o.peer || null, o.text || "", Date.now());
+    this.run("DELETE FROM notifs WHERE uid=? AND id NOT IN (SELECT id FROM notifs WHERE uid=? ORDER BY ts DESC LIMIT 200)", uid, uid);
+  }
+  // @ で呼ばれた人（部屋のメンバーだけ / DMは相手だけ）
+  mentioned(text, { gid, peer }) {
+    const hs = handlesIn(text);
+    if (!hs.length) return [];
+    const rows = this.q(`SELECT id FROM users WHERE handle IN (${hs.map(() => "?").join(",")})`, ...hs).map((r) => r.id);
+    if (gid) return rows.filter((id) => this.member(gid, id));
+    if (peer) return rows.filter((id) => id === peer);
+    return [];
+  }
+  pollOut(t, meId) {
+    if (!t.poll) return null;
+    let options = [];
+    try {
+      options = JSON.parse(t.poll);
+    } catch {}
+    const counts = options.map(() => 0);
+    for (const r of this.q("SELECT opt, COUNT(*) n FROM votes WHERE tid=? GROUP BY opt", t.id)) if (r.opt >= 0 && r.opt < counts.length) counts[r.opt] = r.n;
+    const mine = this.one("SELECT opt FROM votes WHERE tid=? AND uid=?", t.id, meId);
+    return { options, counts, total: counts.reduce((x, y) => x + y, 0), mine: mine ? mine.opt : null };
   }
 
   groupStyle(g) {
@@ -305,8 +370,9 @@ export class Hub extends DurableObject {
     if (M !== "GET" && req.headers.get("x-sr") !== "1") throw new HttpError(403, "csrf");
     if (path === "/api/signup" && M === "POST") return this.signup(req);
     if (path === "/api/login" && M === "POST") return this.login(req);
+    if (path === "/api/reset" && M === "POST") return this.resetPassword(req);
     const me = await this.sessionUser(req);
-    if (path === "/api/me" && M === "GET") return json({ me: pub(me) });
+    if (path === "/api/me" && M === "GET") return json({ me: this.selfOut(me) });
     if (!me) throw new HttpError(401, "auth");
     let m;
 
@@ -328,7 +394,41 @@ export class Hub extends DurableObject {
         this.run("UPDATE users SET avatar=? WHERE id=?", a, me.id);
       }
       if (b.bio !== undefined) this.run("UPDATE users SET bio=? WHERE id=?", str(typeof b.bio === "string" ? b.bio.replace(/[\r\n]+/g, " ") : "", 80), me.id);
-      return json({ me: pub(this.one("SELECT id,handle,name,color,avatar,bio FROM users WHERE id=?", me.id)) });
+      if (b.hideRead !== undefined) this.run("UPDATE users SET hide_read=? WHERE id=?", b.hideRead ? 1 : 0, me.id);
+      return json({ me: this.selfOut(this.one("SELECT id,handle,name,color,avatar,bio,hide_read FROM users WHERE id=?", me.id)) });
+    }
+
+    // ---- パスワード ----
+    if (path === "/api/password" && M === "POST") {
+      const b = await this.body(req);
+      const key = "p:" + me.id;
+      const n = this.throttle(key);
+      const u = this.one("SELECT * FROM users WHERE id=?", me.id);
+      if ((await pbkdf(String(b.old || ""), u.salt)) !== u.pw) {
+        this.fail(key, n);
+        throw new HttpError(401, "login");
+      }
+      const pw = typeof b.pw === "string" ? b.pw : "";
+      if (pw.length < 8 || pw.length > 200) throw bad("password");
+      const salt = rid(8);
+      this.run("UPDATE users SET pw=?, salt=? WHERE id=?", await pbkdf(pw, salt), salt, me.id);
+      const cur = (req.headers.get("cookie") || "").match(/sr=([a-f0-9]{48})/);
+      this.run("DELETE FROM sessions WHERE uid=? AND tok!=?", me.id, cur ? await sha(cur[1]) : "");
+      return json({ ok: true });
+    }
+    if (path === "/api/recovery" && M === "POST") {
+      // 復旧コードをつくり直す（パスワードの確認つき）
+      const b = await this.body(req);
+      const key = "p:" + me.id;
+      const n = this.throttle(key);
+      const u = this.one("SELECT * FROM users WHERE id=?", me.id);
+      if ((await pbkdf(String(b.pw || ""), u.salt)) !== u.pw) {
+        this.fail(key, n);
+        throw new HttpError(401, "login");
+      }
+      const code = makeRecovery();
+      this.run("UPDATE users SET recovery=? WHERE id=?", await sha("rc:" + normRecovery(code)), me.id);
+      return json({ recovery: code });
     }
 
     if (path === "/api/images" && M === "POST") {
@@ -356,13 +456,13 @@ export class Hub extends DurableObject {
         "SELECT id,handle,name,color,avatar,bio FROM users WHERE id!=? AND (handle LIKE ? ESCAPE '\\' OR name LIKE ? ESCAPE '\\') ORDER BY handle LIMIT 12",
         me.id, q.toLowerCase() + "%", "%" + q + "%"
       );
-      return json({ users: rows.map(pub) });
+      return json({ users: rows.filter((u) => !this.blockedPair(me.id, u.id)).map(pub) });
     }
     // 友達追加リンク / QR から開いたときの相手の確認用
     if ((m = path.match(/^\/api\/u\/([a-z0-9_]{3,20})$/)) && M === "GET") {
       const u = this.one("SELECT id,handle,name,color,avatar,bio FROM users WHERE handle=?", m[1]);
-      if (!u) throw new HttpError(404, "not_found");
-      return json({ user: pub(u), rel: this.relation(me.id, u.id) });
+      if (!u || this.blockedPair(me.id, u.id)) throw new HttpError(404, "not_found");
+      return json({ user: pub(u), rel: this.relation(me.id, u.id), blocked: this.blockedByMe(me.id, u.id) });
     }
     if (path === "/api/friends" && M === "GET") {
       const rows = this.q("SELECT * FROM friends WHERE a=? OR b=?", me.id, me.id);
@@ -382,18 +482,25 @@ export class Hub extends DurableObject {
       const target = b.handle
         ? this.one("SELECT id FROM users WHERE handle=?", str(b.handle, 20).toLowerCase().replace(/^@/, ""))
         : this.one("SELECT id FROM users WHERE id=?", str(b.id, 40));
-      if (!target || target.id === me.id) throw bad("user");
+      if (!target || target.id === me.id || this.blockedPair(me.id, target.id)) throw bad("user");
       this.rate("f:" + me.id, 60, 36e5);
       const [x, y] = pair(me.id, target.id);
       const r = this.one("SELECT * FROM friends WHERE a=? AND b=?", x, y);
-      if (!r) this.run("INSERT INTO friends(a,b,status,frm,ts) VALUES(?,?,?,?,?)", x, y, "pending", me.id, Date.now());
-      else if (r.status === "pending" && r.frm !== me.id) this.run("UPDATE friends SET status='accepted', ts=? WHERE a=? AND b=?", Date.now(), x, y);
+      if (!r) {
+        this.run("INSERT INTO friends(a,b,status,frm,ts) VALUES(?,?,?,?,?)", x, y, "pending", me.id, Date.now());
+        this.notify(target.id, "friend_req", me.id);
+      } else if (r.status === "pending" && r.frm !== me.id) {
+        this.run("UPDATE friends SET status='accepted', ts=? WHERE a=? AND b=?", Date.now(), x, y);
+        this.notify(target.id, "friend_ok", me.id);
+      }
       return json({ ok: true, rel: this.relation(me.id, target.id) });
     }
     if (path === "/api/friends/accept" && M === "POST") {
       const b = await this.body(req);
       const [x, y] = pair(me.id, str(b.id, 40));
+      const pend = this.one("SELECT frm FROM friends WHERE a=? AND b=? AND status='pending' AND frm!=?", x, y, me.id);
       this.run("UPDATE friends SET status='accepted', ts=? WHERE a=? AND b=? AND status='pending' AND frm!=?", Date.now(), x, y, me.id);
+      if (pend) this.notify(pend.frm, "friend_ok", me.id);
       return json({ ok: true });
     }
     if (path === "/api/friends/remove" && M === "POST") {
@@ -529,20 +636,31 @@ export class Hub extends DurableObject {
     if ((m = path.match(/^\/api\/groups\/([a-f0-9]{20})\/threads$/))) {
       const g = this.needGroup(m[1], me.id);
       if (M === "GET") {
-        const rows = this.q("SELECT * FROM threads WHERE gid=? ORDER BY last DESC LIMIT 100", g.id);
+        const blocked = this.myBlocks(me.id);
+        const rows = this.q("SELECT * FROM threads WHERE gid=? ORDER BY pinned DESC, last DESC LIMIT 100", g.id).filter((t) => !blocked.has(t.author));
         const rx = this.reactsFor(rows.map((t) => t.id), me.id);
-        const threads = rows.map((t) => ({ id: t.id, author: t.author, text: t.body, images: JSON.parse(t.imgs || "[]"), ts: t.ts, edited: t.edited || null, last: t.last, count: t.ccount, reacts: rx[t.id] || [] }));
-        return json({ threads, users: this.users(threads.map((t) => t.author)), stamps: this.stampMap(Object.values(rx).flat().map((r) => r.s)) });
+        const threads = rows.map((t) => ({
+          id: t.id, author: t.author, text: t.body, images: JSON.parse(t.imgs || "[]"), ts: t.ts, edited: t.edited || null, last: t.last, count: t.ccount,
+          pinned: !!t.pinned, poll: this.pollOut(t, me.id), reacts: rx[t.id] || [],
+        }));
+        return json({ threads, users: this.users([...threads.map((t) => t.author), ...Object.values(rx).flat().flatMap((r) => r.u)]), stamps: this.stampMap(Object.values(rx).flat().map((r) => r.s)) });
       }
       if (M === "POST") {
         const b = await this.body(req);
         const text = str(b.text, 2e4);
         const imgs = this.ownImgs(b.images, me.id);
-        if (!text && !imgs.length) throw bad("empty");
+        // アンケート（選択肢は2〜6個）
+        let poll = null;
+        if (Array.isArray(b.poll)) {
+          const opts = b.poll.map((x) => str(x, 30)).filter(Boolean).slice(0, 6);
+          if (opts.length >= 2) poll = JSON.stringify(opts);
+        }
+        if (!text && !imgs.length && !poll) throw bad("empty");
         const id = rid(10);
         const now = Date.now();
-        this.run("INSERT INTO threads(id,gid,author,body,imgs,ts,last,ccount) VALUES(?,?,?,?,?,?,?,0)", id, g.id, me.id, text, JSON.stringify(imgs), now, now);
-        this.run("UPDATE groups SET last=?, last_text=? WHERE id=?", now, (text || "写真").slice(0, 60), g.id);
+        this.run("INSERT INTO threads(id,gid,author,body,imgs,ts,last,ccount,poll) VALUES(?,?,?,?,?,?,?,0,?)", id, g.id, me.id, text, JSON.stringify(imgs), now, now, poll);
+        this.run("UPDATE groups SET last=?, last_text=? WHERE id=?", now, (text || (poll ? "アンケート" : "写真")).slice(0, 60), g.id);
+        for (const uid of this.mentioned(text, { gid: g.id })) this.notify(uid, "mention", me.id, { gid: g.id, tid: id, text: snip(text) });
         return json({ id });
       }
     }
@@ -551,18 +669,19 @@ export class Hub extends DurableObject {
       const t = this.one("SELECT * FROM threads WHERE id=?", m[1]);
       if (!t || !this.member(t.gid, me.id)) throw new HttpError(404, "not_found");
       if (M === "GET") {
-        const rows = this.q("SELECT * FROM comments WHERE tid=? ORDER BY ts LIMIT 500", t.id);
+        const blocked = this.myBlocks(me.id);
+        const rows = this.q("SELECT * FROM comments WHERE tid=? ORDER BY ts LIMIT 500", t.id).filter((c) => !blocked.has(c.author));
         const rx = this.reactsFor([t.id, ...rows.map((c) => c.id)], me.id);
         const cs = rows.map((c) => ({
-          id: c.id, author: c.author, text: c.body, images: JSON.parse(c.imgs || "[]"), stamp: c.stamp || null, ts: c.ts, edited: c.edited || null, reacts: rx[c.id] || [],
+          id: c.id, author: c.author, text: c.body, images: JSON.parse(c.imgs || "[]"), stamp: c.stamp || null, parent: c.parent || null, ts: c.ts, edited: c.edited || null, reacts: rx[c.id] || [],
         }));
         const g = this.one("SELECT name,color,owner FROM groups WHERE id=?", t.gid);
         return json({
           stamps: this.stampMap([...Object.values(rx).flat().map((r) => r.s), ...cs.map((c) => c.stamp)]),
-          thread: { id: t.id, gid: t.gid, author: t.author, text: t.body, images: JSON.parse(t.imgs || "[]"), ts: t.ts, edited: t.edited || null, count: t.ccount, reacts: rx[t.id] || [] },
-          group: { id: t.gid, name: g.name, color: g.color, owner: g.owner },
+          thread: { id: t.id, gid: t.gid, author: t.author, text: t.body, images: JSON.parse(t.imgs || "[]"), ts: t.ts, edited: t.edited || null, count: t.ccount, pinned: !!t.pinned, poll: this.pollOut(t, me.id), reacts: rx[t.id] || [] },
+          group: { id: t.gid, name: g.name, color: g.color, owner: g.owner, members: this.q("SELECT uid FROM gm WHERE gid=?", t.gid).map((r) => r.uid) },
           comments: cs,
-          users: this.users([t.author, ...cs.map((c) => c.author)]),
+          users: this.users([t.author, ...cs.map((c) => c.author), ...this.q("SELECT uid FROM gm WHERE gid=?", t.gid).map((r) => r.uid), ...Object.values(rx).flat().flatMap((r) => r.u)]),
         });
       }
       if (M === "PATCH") {
@@ -577,6 +696,7 @@ export class Hub extends DurableObject {
         // 自分の投稿と、自分が作った部屋の投稿は消せる
         if (t.author !== me.id && this.one("SELECT owner FROM groups WHERE id=?", t.gid)?.owner !== me.id) throw new HttpError(403, "forbidden");
         this.run("DELETE FROM reactions WHERE tgt IN (SELECT id FROM comments WHERE tid=?) OR tgt=?", t.id, t.id);
+        this.run("DELETE FROM votes WHERE tid=?", t.id);
         this.run("DELETE FROM comments WHERE tid=?", t.id);
         this.run("DELETE FROM threads WHERE id=?", t.id);
         return json({ ok: true });
@@ -592,9 +712,29 @@ export class Hub extends DurableObject {
       const stamp = b.stamp ? String(b.stamp) : null;
       if (stamp && !this.stampOk(stamp)) throw bad("stamp");
       if (!text && !imgs.length && !stamp) throw bad("empty");
+      // 返信先（1段だけ入れ子にする）
+      let parent = null;
+      let parentAuthor = null;
+      if (b.parent) {
+        const pc = this.one("SELECT id, parent, author FROM comments WHERE id=? AND tid=?", String(b.parent), t.id);
+        if (pc) {
+          parent = pc.parent || pc.id;
+          parentAuthor = pc.author;
+        }
+      }
       const id = rid(10);
       const now = Date.now();
-      this.run("INSERT INTO comments(id,tid,author,body,imgs,ts,stamp) VALUES(?,?,?,?,?,?,?)", id, t.id, me.id, text, JSON.stringify(imgs), now, stamp);
+      this.run("INSERT INTO comments(id,tid,author,body,imgs,ts,stamp,parent) VALUES(?,?,?,?,?,?,?,?)", id, t.id, me.id, text, JSON.stringify(imgs), now, stamp, parent);
+      // 通知：メンション > 返信 > コメント の順に、同じ人には1つだけ
+      const told = new Set([me.id]);
+      const tell = (uid, kind) => {
+        if (!uid || told.has(uid)) return;
+        told.add(uid);
+        this.notify(uid, kind, me.id, { gid: t.gid, tid: t.id, text: snip(text, stamp ? "スタンプ" : "写真") });
+      };
+      for (const uid of this.mentioned(text, { gid: t.gid })) tell(uid, "mention");
+      tell(parentAuthor, "reply");
+      tell(t.author, "comment");
       this.run("UPDATE threads SET ccount=ccount+1, last=? WHERE id=?", now, t.id);
       this.run("UPDATE groups SET last=?, last_text=? WHERE id=?", now, (text || (stamp && !imgs.length ? "スタンプ" : "写真")).slice(0, 60), t.gid);
       return json({ id });
@@ -612,15 +752,144 @@ export class Hub extends DurableObject {
         return json({ ok: true });
       }
       if (c.author !== me.id && ct.owner !== me.id) throw new HttpError(403, "forbidden");
+      this.run("UPDATE comments SET parent=NULL WHERE parent=?", c.id);
       this.run("DELETE FROM comments WHERE id=?", c.id);
       this.run("DELETE FROM reactions WHERE tgt=?", c.id);
       this.run("UPDATE threads SET ccount=MAX(0,ccount-1) WHERE id=?", c.tid);
       return json({ ok: true });
     }
 
+    // ---- ピン留め・アンケート ----
+    if ((m = path.match(/^\/api\/threads\/([a-f0-9]{20})\/(pin|vote)$/)) && M === "POST") {
+      const t = this.one("SELECT * FROM threads WHERE id=?", m[1]);
+      if (!t || !this.member(t.gid, me.id)) throw new HttpError(404, "not_found");
+      const b = await this.body(req);
+      if (m[2] === "pin") {
+        const owner = this.one("SELECT owner FROM groups WHERE id=?", t.gid)?.owner;
+        if (t.author !== me.id && owner !== me.id) throw new HttpError(403, "forbidden");
+        if (b.pinned) {
+          if (this.one("SELECT COUNT(*) c FROM threads WHERE gid=? AND pinned>0 AND id!=?", t.gid, t.id).c >= 3) throw new HttpError(400, "pin_limit");
+          this.run("UPDATE threads SET pinned=? WHERE id=?", Date.now(), t.id);
+        } else this.run("UPDATE threads SET pinned=0 WHERE id=?", t.id);
+        return json({ ok: true });
+      }
+      const poll = this.pollOut(t, me.id);
+      if (!poll) throw bad("no_poll");
+      const opt = Number.isInteger(b.opt) ? b.opt : -1;
+      if (opt < 0 || opt >= poll.options.length) throw bad("opt");
+      if (poll.mine === opt) this.run("DELETE FROM votes WHERE tid=? AND uid=?", t.id, me.id);
+      else this.run("INSERT OR REPLACE INTO votes(tid,uid,opt) VALUES(?,?,?)", t.id, me.id, opt);
+      return json({ poll: this.pollOut(t, me.id) });
+    }
+
+    // ---- 通知 ----
+    if (path === "/api/notifs" && M === "GET") {
+      const rows = this.q("SELECT * FROM notifs WHERE uid=? ORDER BY ts DESC LIMIT 60", me.id);
+      const unread = this.one("SELECT COUNT(*) c FROM notifs WHERE uid=? AND rd=0", me.id).c;
+      const items = rows.map((r) => ({ id: r.id, kind: r.kind, actor: r.actor || null, gid: r.gid, tid: r.tid, peer: r.peer, text: r.text, ts: r.ts, rd: !!r.rd }));
+      return json({ items, unread, users: this.users(items.map((x) => x.actor)) });
+    }
+    if (path === "/api/notifs/read" && M === "POST") {
+      const b = await this.body(req);
+      if (b.id) this.run("UPDATE notifs SET rd=1 WHERE uid=? AND id=?", me.id, String(b.id));
+      else this.run("UPDATE notifs SET rd=1 WHERE uid=?", me.id);
+      return json({ ok: true });
+    }
+
+    // ---- 検索（自分が入っている部屋の投稿とコメント） ----
+    if (path === "/api/find" && M === "GET") {
+      const q = str(url.searchParams.get("q") || "", 40).replace(/[\\%_]/g, "");
+      if (!q) return json({ items: [], users: {} });
+      const like = "%" + q + "%";
+      const gid = url.searchParams.get("gid");
+      const gf = gid && /^[a-f0-9]{20}$/.test(gid) ? " AND t.gid=?" : "";
+      const ga = gf ? [gid] : [];
+      const blocked = this.myBlocks(me.id);
+      const th = this.q(
+        `SELECT t.id tid, t.gid gid, t.author author, t.body body, t.ts ts, g.name gname FROM threads t JOIN groups g ON g.id=t.gid JOIN gm ON gm.gid=t.gid AND gm.uid=? WHERE t.body LIKE ? ESCAPE '\\'${gf} ORDER BY t.ts DESC LIMIT 30`,
+        me.id, like, ...ga
+      ).map((r) => ({ kind: "thread", ...r }));
+      const cm = this.q(
+        `SELECT c.tid tid, t.gid gid, c.author author, c.body body, c.ts ts, g.name gname FROM comments c JOIN threads t ON t.id=c.tid JOIN groups g ON g.id=t.gid JOIN gm ON gm.gid=t.gid AND gm.uid=? WHERE c.body LIKE ? ESCAPE '\\'${gf} ORDER BY c.ts DESC LIMIT 30`,
+        me.id, like, ...ga
+      ).map((r) => ({ kind: "comment", ...r }));
+      const items = [...th, ...cm].filter((x) => !blocked.has(x.author)).sort((x, y) => y.ts - x.ts).slice(0, 40);
+      return json({ items, users: this.users(items.map((x) => x.author)) });
+    }
+
+    // ---- ブロック ----
+    if (path === "/api/blocks" && M === "GET") {
+      const ids = [...this.myBlocks(me.id)];
+      return json({ users: ids.map((id) => this.users([id])[id]).filter(Boolean) });
+    }
+    if ((path === "/api/blocks" || path === "/api/blocks/remove") && M === "POST") {
+      const b = await this.body(req);
+      const uid = str(b.id, 40);
+      const u = this.one("SELECT id FROM users WHERE id=?", uid);
+      if (!u || uid === me.id) throw bad("user");
+      if (path === "/api/blocks") {
+        this.run("INSERT OR IGNORE INTO blocks(a,b,ts) VALUES(?,?,?)", me.id, uid, Date.now());
+        const [x, y] = pair(me.id, uid);
+        this.run("DELETE FROM friends WHERE a=? AND b=?", x, y);
+      } else this.run("DELETE FROM blocks WHERE a=? AND b=?", me.id, uid);
+      return json({ ok: true });
+    }
+
+    // ---- 通報 ----
+    if (path === "/api/report" && M === "POST") {
+      const b = await this.body(req);
+      const kind = str(b.kind, 10);
+      const tgt = str(b.tgt, 40);
+      let gid = null;
+      let owner = null;
+      if (kind === "thread") {
+        const t = this.one("SELECT gid FROM threads WHERE id=?", tgt);
+        if (!t || !this.member(t.gid, me.id)) throw new HttpError(404, "not_found");
+        gid = t.gid;
+      } else if (kind === "comment") {
+        const c = this.one("SELECT tid FROM comments WHERE id=?", tgt);
+        const t = c && this.one("SELECT gid FROM threads WHERE id=?", c.tid);
+        if (!t || !this.member(t.gid, me.id)) throw new HttpError(404, "not_found");
+        gid = t.gid;
+      } else if (kind === "dm") {
+        const d = this.one("SELECT pk FROM dms WHERE id=?", tgt);
+        if (!d || !d.pk.split(":").includes(me.id)) throw new HttpError(404, "not_found");
+      } else if (kind === "user") {
+        if (!this.one("SELECT 1 x FROM users WHERE id=?", tgt)) throw new HttpError(404, "not_found");
+      } else throw bad("kind");
+      this.rate("rp:" + me.id, 20, 36e5);
+      this.run("INSERT INTO reports(id,reporter,kind,tgt,gid,reason,ts) VALUES(?,?,?,?,?,?,?)", rid(10), me.id, kind, tgt, gid, str(b.reason, 200), Date.now());
+      if (gid) {
+        owner = this.one("SELECT owner FROM groups WHERE id=?", gid)?.owner;
+        // 部屋のオーナーには、匿名で知らせる
+        if (owner && owner !== me.id) this.notify(owner, "report", "", { gid, tid: kind === "thread" ? tgt : this.one("SELECT tid FROM comments WHERE id=?", tgt)?.tid, text: str(b.reason, 60) });
+      }
+      return json({ ok: true });
+    }
+    if (path === "/api/admin/reports" && M === "GET") {
+      if (!this.isAdmin(me)) throw new HttpError(403, "forbidden");
+      const rows = this.q("SELECT * FROM reports WHERE status='open' ORDER BY ts DESC LIMIT 100");
+      const us = this.users(rows.map((r) => r.reporter));
+      const items = rows.map((r) => {
+        let text = "";
+        if (r.kind === "thread") text = this.one("SELECT body FROM threads WHERE id=?", r.tgt)?.body || "";
+        else if (r.kind === "comment") text = this.one("SELECT body FROM comments WHERE id=?", r.tgt)?.body || "";
+        else if (r.kind === "dm") text = this.one("SELECT body FROM dms WHERE id=?", r.tgt)?.body || "";
+        else if (r.kind === "user") text = "@" + (this.one("SELECT handle FROM users WHERE id=?", r.tgt)?.handle || "");
+        return { id: r.id, kind: r.kind, tgt: r.tgt, reason: r.reason, ts: r.ts, reporter: us[r.reporter]?.handle || "", text: snip(text) };
+      });
+      return json({ items });
+    }
+    if (path === "/api/admin/reports/resolve" && M === "POST") {
+      if (!this.isAdmin(me)) throw new HttpError(403, "forbidden");
+      const b = await this.body(req);
+      this.run("UPDATE reports SET status='done' WHERE id=?", str(b.id, 40));
+      return json({ ok: true });
+    }
+
     // ---- DM（友達とのメッセージ） ----
     if (path === "/api/dms" && M === "GET") {
-      const rows = this.q("SELECT * FROM friends WHERE (a=? OR b=?) AND status='accepted'", me.id, me.id);
+      const rows = this.q("SELECT * FROM friends WHERE (a=? OR b=?) AND status='accepted'", me.id, me.id).filter((r) => !this.blockedPair(me.id, r.a === me.id ? r.b : r.a));
       const convs = [];
       for (const r of rows) {
         const peer = r.a === me.id ? r.b : r.a;
@@ -642,14 +911,18 @@ export class Hub extends DurableObject {
         const rows = this.q("SELECT * FROM (SELECT * FROM dms WHERE pk=? ORDER BY ts DESC LIMIT 200) ORDER BY ts", pk);
         const rx = this.reactsFor(rows.map((x) => x.id), me.id);
         this.run("INSERT OR REPLACE INTO dm_reads(uid,peer,ts) VALUES(?,?,?)", me.id, peer, Date.now());
+        const pr = this.one("SELECT ts FROM dm_reads WHERE uid=? AND peer=?", peer, me.id);
+        const peerHides = this.one("SELECT hide_read FROM users WHERE id=?", peer)?.hide_read;
+        const peerRead = pr && !peerHides && !me.hide_read ? pr.ts : 0;
         const messages = rows.map((x) => ({ id: x.id, author: x.author, text: x.body, images: JSON.parse(x.imgs || "[]"), stamp: x.stamp || null, ts: x.ts, reacts: rx[x.id] || [] }));
         return json({
-          messages, peer, users: this.users([peer, me.id]),
+          messages, peer, peerRead, users: this.users([peer, me.id, ...Object.values(rx).flat().flatMap((r) => r.u)]),
           stamps: this.stampMap([...Object.values(rx).flat().map((r) => r.s), ...messages.map((x) => x.stamp)]),
         });
       }
       if (M === "POST") {
         const b = await this.body(req);
+        if (this.blockedPair(me.id, peer)) throw new HttpError(403, "blocked");
         this.rate("d:" + me.id, 600, 36e5);
         const text = str(b.text, 2e4);
         const imgs = this.ownImgs(b.images, me.id);
@@ -658,6 +931,7 @@ export class Hub extends DurableObject {
         if (!text && !imgs.length && !stamp) throw bad("empty");
         const id = rid(10);
         this.run("INSERT INTO dms(id,pk,author,body,imgs,stamp,ts) VALUES(?,?,?,?,?,?,?)", id, pk, me.id, text, JSON.stringify(imgs), stamp, Date.now());
+        for (const uid of this.mentioned(text, { peer })) this.notify(uid, "mention", me.id, { peer: me.id, text: snip(text) });
         return json({ id });
       }
     }
@@ -729,6 +1003,11 @@ export class Hub extends DurableObject {
       else {
         if (this.one("SELECT COUNT(*) c FROM reactions WHERE tgt=? AND uid=?", tgt, me.id).c >= 10) throw new HttpError(400, "too_many_reacts");
         this.run("INSERT INTO reactions(tgt,uid,stamp,ts) VALUES(?,?,?,?)", tgt, me.id, stamp, Date.now());
+        // 投稿・コメントの書いた人に知らせる（DM には通知を出さない）
+        const tt = this.one("SELECT author, body, gid FROM threads WHERE id=?", tgt);
+        const cc = !tt && this.one("SELECT c.author, c.body, c.tid, t.gid FROM comments c JOIN threads t ON t.id=c.tid WHERE c.id=?", tgt);
+        if (tt) this.notify(tt.author, "react", me.id, { gid: tt.gid, tid: tgt, text: snip(tt.body, "写真") });
+        else if (cc) this.notify(cc.author, "react", me.id, { gid: cc.gid, tid: cc.tid, text: snip(cc.body, "スタンプ") });
       }
       const reacts = this.reactsFor([tgt], me.id)[tgt] || [];
       return json({ reacts, stamps: this.stampMap(reacts.map((r) => r.s)) });
@@ -786,8 +1065,11 @@ export class Hub extends DurableObject {
     );
     // 最初から自分だけの部屋（メモ帳がわり）を1つ用意する
     this.createGroup("ひとりごと", id, []);
+    // パスワードを忘れたときの復旧コード（この1回だけ表示する）
+    const recovery = makeRecovery();
+    this.run("UPDATE users SET recovery=? WHERE id=?", await sha("rc:" + normRecovery(recovery)), id);
     const cookie = await this.startSession(id);
-    return json({ me: pub(this.one("SELECT id,handle,name,color,avatar,bio FROM users WHERE id=?", id)) }, 200, { "set-cookie": cookie });
+    return json({ me: this.selfOut(this.one("SELECT id,handle,name,color,avatar,bio,hide_read FROM users WHERE id=?", id)), recovery }, 200, { "set-cookie": cookie });
   }
 
   async login(req) {
@@ -803,6 +1085,30 @@ export class Hub extends DurableObject {
       throw new HttpError(401, "login");
     }
     const cookie = await this.startSession(u.id);
-    return json({ me: pub(u) }, 200, { "set-cookie": cookie });
+    return json({ me: this.selfOut(u) }, 200, { "set-cookie": cookie });
+  }
+
+  // パスワードの再設定（ユーザーID + 復旧コード）
+  async resetPassword(req) {
+    const b = await this.body(req);
+    const handle = str(b.handle, 20).toLowerCase();
+    const ip = "r:" + (req.headers.get("cf-connecting-ip") || "x");
+    const n1 = this.throttle(ip);
+    const n2 = this.throttle("r:" + handle);
+    const pw = typeof b.pw === "string" ? b.pw : "";
+    const u = this.one("SELECT * FROM users WHERE handle=?", handle);
+    const ok = u && u.recovery && (await sha("rc:" + normRecovery(b.code))) === u.recovery;
+    if (!ok) {
+      this.fail(ip, n1);
+      this.fail("r:" + handle, n2);
+      throw new HttpError(401, "recovery");
+    }
+    if (pw.length < 8 || pw.length > 200) throw bad("password");
+    const salt = rid(8);
+    const code = makeRecovery();
+    this.run("UPDATE users SET pw=?, salt=?, recovery=? WHERE id=?", await pbkdf(pw, salt), salt, await sha("rc:" + normRecovery(code)), u.id);
+    this.run("DELETE FROM sessions WHERE uid=?", u.id);
+    const cookie = await this.startSession(u.id);
+    return json({ me: this.selfOut(this.one("SELECT id,handle,name,color,avatar,bio,hide_read FROM users WHERE id=?", u.id)), recovery: code }, 200, { "set-cookie": cookie });
   }
 }

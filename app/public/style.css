@@ -316,3 +316,46 @@ h1,h2,h3{text-wrap:balance; margin:0}
 .dmmeta{display:flex; align-items:center; gap:10px; font-size:11px; color:var(--sub)}
 .dmmeta .ghost{font-size:11px; padding:0}
 .dm .rxbar{margin-top:0}
+
+/* ---- メンション・リンク・検索 ---- */
+.mention{display:inline; padding:0 4px; border-radius:8px; background:rgba(150,170,255,.18); color:#b9c6ff; font:inherit; font-weight:800; cursor:pointer}
+.lnk{color:#9fc0ff; text-decoration:underline; text-underline-offset:2px; overflow-wrap:anywhere}
+.mbox{display:none; position:absolute; left:8px; right:8px; bottom:calc(100% + 6px); z-index:8; background:#15141b; border-radius:20px; padding:6px; box-shadow:0 14px 34px rgba(0,0,0,.7), 0 0 0 1px var(--line)}
+.comp{position:relative}
+.mitem{display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:8px 10px; border-radius:14px; cursor:pointer}
+.mitem:hover,.mitem:focus-visible{background:rgba(255,255,255,.08)}
+.mitem .mn{font-weight:800}
+.mitem small{color:var(--sub)}
+mark{background:rgba(255,225,120,.35); color:inherit; border-radius:4px; padding:0 2px}
+.srow{display:block; width:100%; text-align:left; padding:12px 6px; border-bottom:1px solid var(--line); cursor:pointer}
+.smeta{font-size:12px; color:var(--sub); font-weight:800}
+.stxt{margin-top:4px; font-size:15px; line-height:1.5; overflow-wrap:anywhere}
+.rep{padding:12px 0; border-bottom:1px solid var(--line); display:flex; flex-direction:column; gap:6px; align-items:flex-start}
+
+/* ---- ヘッダーのボタン・通知 ---- */
+.topr{display:flex; align-items:center; gap:6px}
+.topbtn{position:relative; display:grid; place-items:center; width:40px; height:40px; border-radius:50%; color:var(--ink); background:rgba(255,255,255,.06); box-shadow:inset 0 0 0 1px var(--line); cursor:pointer}
+.topbtn .dot{top:-4px; right:-4px}
+.nrow{display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 8px; border-radius:18px; cursor:pointer}
+.nrow.new{background:rgba(255,255,255,.06)}
+.nrow .nm{flex:1; min-width:0; font-size:14px; font-weight:700}
+.nrow .nm small{display:block; margin-top:2px; font-weight:500; color:var(--sub); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.nrow .ago{font-size:12px; color:var(--sub)}
+
+/* ---- ピン留め・アンケート・返信 ---- */
+.pinned{font-size:11px; font-weight:900; padding:2px 8px; border-radius:999px; background:#fff; color:#17131f}
+.poll{display:grid; gap:6px; margin:8px 0 2px}
+.popt{position:relative; display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; overflow:hidden; text-align:left; padding:11px 14px; border-radius:16px; background:var(--card2); box-shadow:inset 0 0 0 1px var(--line); cursor:pointer}
+.popt.me{box-shadow:inset 0 0 0 2px #fff}
+.pbar{position:absolute; left:0; top:0; bottom:0; background:rgba(150,170,255,.25); transition:width .4s}
+.popt.me .pbar{background:rgba(255,255,255,.28)}
+.plabel,.pct{position:relative; font-size:14px; font-weight:800}
+.pct{font-size:12px; color:var(--sub); white-space:nowrap}
+.pollmk{display:flex; flex-direction:column; align-items:flex-start}
+.pollmk .field{width:100%}
+.reply{margin-left:34px; border-left:2px solid var(--line); padding-left:12px}
+.replybar{display:none; align-items:center; justify-content:space-between; gap:8px; max-width:580px; margin:0 auto 6px; padding:6px 14px; border-radius:16px; background:#15141b; font-size:13px; font-weight:800; color:var(--sub)}
+.rxhead{display:flex; align-items:center; gap:12px; margin-bottom:8px}
+.readmk{color:#9fc0ff; font-weight:800}
+.pills{display:flex; gap:8px}
+.linkbtn{background:none; color:var(--sub); font-weight:800; text-decoration:underline}

@@ -62,6 +62,7 @@ var ERR = {
   handle:'IDは半角の英数字と_で3〜20文字にしてください', password:'パスワードは8文字以上にしてください', name:'名前を入力してください',
   too_many:'試行が多すぎます しばらくしてからお試しください', too_large:'画像が大きすぎます', type:'この画像は使えません', empty:'内容を入力してください',
   limit:'スタンプは100個までです', stamp:'このスタンプは使えませんでした', too_many_reacts:'1つの投稿に押せるスタンプは10個までです',
+  recovery:'ユーザーIDか復旧コードが違います', blocked:'この相手には送れません', pin_limit:'ピン留めは3つまでです', no_poll:'アンケートではありません',
   locked:'この部屋の見た目は、オーナーだけが変えられます', owner_only:'オーナーだけができる操作です', forbidden:'この操作はできません',
   no_room:'そのコードの部屋が見つかりません', user:'ユーザーが見つかりません', not_found:'見つかりませんでした'
 };
@@ -82,6 +83,26 @@ function api(path, o){
       return d;
     });
   });
+}
+
+/* ---------- rich text: @mention / link ---------- */
+function richText(text){
+  var frag = document.createDocumentFragment();
+  var re = /(https?:\/\/[^\s<>"']+)|(^|[^a-z0-9_])@([a-z0-9_]{3,20})/g, last = 0, m;
+  while((m = re.exec(text))){
+    if(m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+    if(m[1]){
+      frag.appendChild(h('a', {href:m[1], target:'_blank', rel:'noopener noreferrer', class:'lnk', text:m[1], onclick:function(e){ e.stopPropagation(); }}));
+    }else{
+      if(m[2]) frag.appendChild(document.createTextNode(m[2]));
+      (function(handle){
+        frag.appendChild(h('button', {type:'button', class:'mention', text:'@' + handle, onclick:function(e){ e.stopPropagation(); location.hash = '#/add/' + handle; }}));
+      })(m[3]);
+    }
+    last = re.lastIndex;
+  }
+  if(last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+  return frag;
 }
 
 /* ---------- invite: links, copy, share, QR ---------- */
@@ -296,8 +317,32 @@ function makeComposer(o){
     });
   }}, svgSmile()) : null;
   var send = h('button', {type:'button', class:'b3 sm', text:o.submitLabel, disabled:true, onclick:submit});
-  function sync(){ send.disabled = busy || (!ta.value.trim() && !imgs.length); }
-  ta.addEventListener('input', function(){ ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 180) + 'px'; sync(); });
+  var sugg = h('div', {class:'mbox', role:'listbox', 'aria-label':'呼びかける人'});
+  var dkey = o.draft ? 'dara.draft.' + o.draft : null;
+  function saveDraft(){ if(!dkey) return; try{ if(ta.value.trim()) localStorage.setItem(dkey, ta.value); else localStorage.removeItem(dkey); }catch(e){} }
+  function sync(){ send.disabled = busy || (!ta.value.trim() && !imgs.length && !(o.canEmpty && o.canEmpty())); }
+  function fit(){ ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 180) + 'px'; }
+  if(dkey){ try{ var dv = localStorage.getItem(dkey); if(dv){ ta.value = dv; setTimeout(fit, 0); setTimeout(sync, 0); } }catch(e){} }
+  function mentionCheck(){
+    sugg.innerHTML = ''; sugg.style.display = 'none';
+    if(!o.mentions) return;
+    var pos = ta.selectionStart, before = ta.value.slice(0, pos), m = before.match(/(^|[\s　])@([a-z0-9_]*)$/);
+    if(!m) return;
+    var q = m[2].toLowerCase();
+    var list = (o.mentions() || []).filter(function(u){ return u.id !== st.me.id && (!q || u.handle.indexOf(q) === 0 || (u.name || '').toLowerCase().indexOf(q) >= 0); }).slice(0, 5);
+    if(!list.length) return;
+    list.forEach(function(u){
+      sugg.appendChild(h('button', {type:'button', class:'mitem', role:'option', onclick:function(){
+        var start = pos - m[2].length - 1;
+        ta.value = ta.value.slice(0, start) + '@' + u.handle + ' ' + ta.value.slice(pos);
+        var np = start + u.handle.length + 2; ta.focus(); ta.setSelectionRange(np, np);
+        sugg.style.display = 'none'; fit(); sync(); saveDraft();
+      }}, avatar(u.id, 28), h('span', {class:'mn', text:u.name}), h('small', {text:'@' + u.handle})));
+    });
+    sugg.style.display = 'block';
+  }
+  ta.addEventListener('input', function(){ fit(); sync(); saveDraft(); mentionCheck(); });
+  ta.addEventListener('keyup', function(e){ if(e.key === 'ArrowLeft' || e.key === 'ArrowRight') mentionCheck(); });
   ta.addEventListener('keydown', function(e){ if((e.metaKey || e.ctrlKey) && e.key === 'Enter'){ e.preventDefault(); submit(); } });
   file.addEventListener('change', async function(){
     var files = Array.prototype.slice.call(file.files).slice(0, 4 - imgs.length);
@@ -321,15 +366,15 @@ function makeComposer(o){
     try{
       var ids = imgs.length ? await uploadAll(imgs) : [];
       await o.onSubmit(ta.value.trim(), ids);
-      ta.value = ''; ta.style.height = 'auto'; imgs = []; drawThumbs();
+      ta.value = ''; ta.style.height = 'auto'; imgs = []; drawThumbs(); saveDraft(); sugg.style.display = 'none';
       busy = false; send.textContent = o.submitLabel; sync();
       if(o.onDone) o.onDone();
     }catch(e){
       toast(errMsg(e)); busy = false; send.textContent = o.submitLabel; sync();
     }
   }
-  var el = h('div', {class:'comp'}, thumbs, h('div', {class:'crow'}, photoBtn, stampBtn, ta, send), file);
-  return {el:el, focus:function(){ ta.focus(); }};
+  var el = h('div', {class:'comp'}, sugg, thumbs, h('div', {class:'crow'}, photoBtn, stampBtn, ta, send), file);
+  return {el:el, focus:function(){ ta.focus(); }, sync:sync, clearDraft:function(){ ta.value = ''; saveDraft(); }};
 }
 
 /* ---------- polling ---------- */
@@ -353,23 +398,80 @@ function editSheet(kind, id, text, done){
   var close = openSheet('なおす', h('div', null, ta, save));
   setTimeout(function(){ ta.focus(); }, 60);
 }
-// 自分の投稿は編集・削除、部屋のオーナーはほかの人の投稿も削除できる
+// 自分の投稿は編集・削除、部屋のオーナーはほかの人の投稿も削除できる。ほかの人の投稿は通報・ブロックもできる
+function reportSheet(kind, tgt){
+  var REASONS = ['スパム・迷惑', '不適切な内容', 'いやがらせ', 'その他'];
+  var sel = 0, box = h('div'), note = h('input', {class:'field', type:'text', maxlength:'100', placeholder:'くわしく（任意）', 'aria-label':'くわしい理由'});
+  var list = h('div', {class:'chips'});
+  function draw(){ list.innerHTML = ''; REASONS.forEach(function(t, i){ list.appendChild(h('button', {type:'button', class:'chip' + (sel === i ? ' on' : ''), text:t, onclick:function(){ sel = i; draw(); }})); }); }
+  draw();
+  var go = h('button', {type:'button', class:'b3 block', style:'margin-top:14px', text:'通報する'});
+  go.addEventListener('click', async function(){
+    go.disabled = true;
+    try{ await api('/api/report', {body:{kind:kind, tgt:tgt, reason:REASONS[sel] + (note.value.trim() ? ' / ' + note.value.trim() : '')}}); close(); toast('通報しました'); }
+    catch(e){ toast(errMsg(e)); go.disabled = false; }
+  });
+  box.appendChild(h('div', {class:'hint', style:'margin-bottom:8px', text:'部屋のオーナーに、匿名で知らされます'}));
+  box.appendChild(list); box.appendChild(note); box.appendChild(go);
+  var close = openSheet('通報する', box);
+}
+function blockUser(id, after){
+  askConfirm(user(id).name + ' さんをブロックしますか 投稿やメッセージが見えなくなり、友達も解除されます', 'ブロックする').then(async function(ok){
+    if(!ok) return;
+    try{ await api('/api/blocks', {body:{id:id}}); toast('ブロックしました'); if(after) after(); }catch(e){ toast(errMsg(e)); }
+  });
+}
+function moreSheet(kind, p, done){
+  var box = h('div');
+  box.appendChild(h('button', {type:'button', class:'b3 soft block', text:'この投稿を通報する', onclick:function(){ close(); reportSheet(kind, p.id); }}));
+  box.appendChild(h('button', {type:'button', class:'b3 soft block', style:'margin-top:8px;color:var(--danger)', text:user(p.author).name + ' さんをブロックする', onclick:function(){ close(); blockUser(p.author, done.edit); }}));
+  var close = openSheet('この投稿について', box);
+}
 function postTools(kind, p, roomOwner, done){
   var mine = p.author === st.me.id;
-  if(!mine && !roomOwner) return null;
+  done = done || {};
+  if(!mine && !roomOwner && !done.reply && kind === 'dm') return null;
   var row = h('div', {class:'ptools'});
+  if(done.reply) row.appendChild(h('button', {type:'button', class:'ghost', text:'返信', onclick:function(e){ e.stopPropagation(); done.reply(p); }}));
+  if(kind === 'thread' && (mine || roomOwner)) row.appendChild(h('button', {type:'button', class:'ghost', text:p.pinned ? 'ピン留めを外す' : 'ピン留め', onclick:async function(e){
+    e.stopPropagation();
+    try{ await api('/api/threads/' + p.id + '/pin', {body:{pinned:!p.pinned}}); if(done.edit) done.edit(); }catch(x){ toast(errMsg(x)); }
+  }}));
   if(mine) row.appendChild(h('button', {type:'button', class:'ghost', text:'編集', onclick:function(e){ e.stopPropagation(); editSheet(kind, p.id, p.text || '', done.edit); }}));
-  row.appendChild(h('button', {type:'button', class:'ghost', text:mine ? '削除' : '削除（オーナー）', onclick:async function(e){
+  if(mine || roomOwner) row.appendChild(h('button', {type:'button', class:'ghost', text:mine ? '削除' : '削除（オーナー）', onclick:async function(e){
     e.stopPropagation();
     var ok = await askConfirm(kind === 'thread' ? 'このスレッドを削除しますか コメントも見られなくなります' : 'このコメントを削除しますか', '削除する');
     if(!ok) return;
     try{ await api('/api/' + (kind === 'thread' ? 'threads/' : 'comments/') + p.id, {method:'DELETE', body:{}}); if(done.del) done.del(); }
     catch(x){ toast(errMsg(x)); }
   }}));
-  return row;
+  if(!mine) row.appendChild(h('button', {type:'button', class:'ghost', 'aria-label':'そのほか', text:'…', onclick:function(e){ e.stopPropagation(); moreSheet(kind, p, done); }}));
+  return row.childNodes.length ? row : null;
 }
 
 /* ---------- shared post ---------- */
+function reactorsSheet(r){
+  var box = h('div', null, h('div', {class:'rxhead'}, stampEl(r.s, 64), h('b', {text:r.n + '人'})));
+  (r.u || []).forEach(function(id){ box.appendChild(h('div', {class:'row'}, avatar(id, 40), h('div', {class:'nm', text:user(id).name}))); });
+  if(r.n > (r.u || []).length) box.appendChild(h('div', {class:'hint', text:'ほか ' + (r.n - r.u.length) + '人'}));
+  openSheet('スタンプを押した人', box);
+}
+// アンケート
+function pollEl(p, changed){
+  var pl = p.poll, box = h('div', {class:'poll', role:'group', 'aria-label':'アンケート'});
+  pl.options.forEach(function(t, i){
+    var pct = pl.total ? Math.round(pl.counts[i] * 100 / pl.total) : 0;
+    var b = h('button', {type:'button', class:'popt' + (pl.mine === i ? ' me' : ''), 'aria-pressed':pl.mine === i ? 'true' : 'false'},
+      h('span', {class:'pbar', style:'width:' + pct + '%'}), h('span', {class:'plabel', text:t}), h('span', {class:'pct', text:pl.counts[i] + '票  ' + pct + '%'}));
+    b.addEventListener('click', function(e){
+      e.stopPropagation();
+      api('/api/threads/' + p.id + '/vote', {body:{opt:i}}).then(function(){ if(changed) changed(); }).catch(function(x){ toast(errMsg(x)); });
+    });
+    box.appendChild(b);
+  });
+  box.appendChild(h('div', {class:'hint', text:'全部で ' + pl.total + '票  もう一度押すと取り消せます'}));
+  return box;
+}
 function react(tgt, stamp, done){
   api('/api/react', {body:{tgt:tgt, stamp:stamp}}).then(function(r){ cacheStamps(r.stamps); if(done) done(); }).catch(function(e){ toast(errMsg(e)); });
 }
@@ -378,7 +480,11 @@ function reactBar(p, o){
   var bar = h('div', {class:'rxbar'});
   (p.reacts || []).forEach(function(r){
     var b = h('button', {type:'button', class:'rx' + (r.me ? ' me' : ''), 'aria-pressed':r.me ? 'true' : 'false', 'aria-label':'スタンプ ' + r.n + '人'}, stampEl(r.s, 26), h('span', {text:r.n}));
-    b.addEventListener('click', function(e){ e.stopPropagation(); react(p.id, r.s, o.onReact); });
+    var lp = null, longPressed = false;
+    b.addEventListener('pointerdown', function(){ longPressed = false; lp = setTimeout(function(){ longPressed = true; reactorsSheet(r); }, 550); });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(function(ev){ b.addEventListener(ev, function(){ clearTimeout(lp); }); });
+    b.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+    b.addEventListener('click', function(e){ e.stopPropagation(); if(longPressed){ longPressed = false; return; } react(p.id, r.s, o.onReact); });
     bar.appendChild(b);
   });
   var add = h('button', {type:'button', class:'rx add', 'aria-label':'スタンプをおす'}, svgSmile(), h('span', {text:'＋'}));
@@ -395,8 +501,9 @@ function reactBar(p, o){
 function postEl(p, o){
   o = o || {};
   var body = h('div', null,
-    h('div', {class:'who'}, h('b', {text:user(p.author).name}), h('span', {class:'ago', text:ago(p.ts)}), p.edited ? h('span', {class:'ago', text:'編集済み'}) : null),
-    p.text ? h('div', {class:'ptxt', text:p.text}) : null,
+    h('div', {class:'who'}, h('b', {text:user(p.author).name}), h('span', {class:'ago', text:ago(p.ts)}), p.edited ? h('span', {class:'ago', text:'編集済み'}) : null, p.pinned ? h('span', {class:'pinned', text:'ピン留め'}) : null),
+    p.text ? h('div', {class:'ptxt'}, richText(p.text)) : null,
+    p.poll ? pollEl(p, o.onReact) : null,
     p.stamp ? h('div', {class:'stampbig'}, stampEl(p.stamp, 104)) : null,
     media(p.images),
     o.count !== undefined ? h('div', {class:'meta', text:'コメント ' + o.count}) : null,
@@ -429,6 +536,7 @@ function authView(){
       try{
         var r = await api(signup ? '/api/signup' : '/api/login', {body:{handle:handle.value, name:name && name.value, password:pw.value}});
         st.me = r.me; cacheUsers(o(r.me)); location.hash = pending || '#/'; pending = null; render();
+        if(r.recovery) setTimeout(function(){ recoverySheet(r.recovery, '復旧コードを保存してください'); }, 300);
       }catch(x){ err.textContent = errMsg(x); btn.disabled = false; }
     });
     var hb = h('div', {class:'hero3d tall'});
@@ -438,6 +546,7 @@ function authView(){
     box.appendChild(h('div', {class:'tag', text:'友達だけのスレッドをつくろう'}));
     if(pending) box.appendChild(h('div', {class:'hint', style:'text-align:center', text:'登録またはログインすると、招待の続きが開きます'}));
     box.appendChild(form);
+    if(!signup) box.appendChild(h('div', {class:'swap'}, h('button', {type:'button', text:'パスワードを忘れた方', onclick:resetSheet})));
     box.appendChild(h('div', {class:'swap'}, signup ? 'アカウントをお持ちの方は ' : 'はじめての方は ',
       h('button', {type:'button', text:signup ? 'ログイン' : '新規登録', onclick:function(){ mode = signup ? 'login' : 'signup'; draw(); }})));
   }
@@ -476,6 +585,7 @@ function profileSheet(){
   var box = h('div', null, av,
     h('button', {type:'button', class:'b3 soft sm', style:'margin-top:12px', text:'アイコンを選ぶ', onclick:function(){ file.click(); }}), file,
     h('div', {class:'lbl', text:'表示名'}), nameIn, h('div', {class:'lbl', text:'自己紹介'}), bioIn, save,
+    h('button', {type:'button', class:'b3 soft block', style:'margin-top:10px', text:'プライバシーと安全（既読・ブロック・パスワード）', onclick:function(){ close(); settingsSheet(); }}),
     h('button', {type:'button', class:'b3 soft block', style:'margin-top:14px;color:var(--danger)', text:'ログアウト', onclick:async function(){
       try{ await api('/api/logout', {body:{}}); }catch(e){}
       st.me = null; close(); location.hash = '#/'; render();
@@ -483,18 +593,183 @@ function profileSheet(){
   var close = openSheet('プロフィール', box);
 }
 
+/* ---------- notifications / search ---------- */
+var NKIND = {comment:'がコメントしました', reply:'が返信しました', mention:'があなたを呼びました', react:'がスタンプを押しました',
+  friend_req:'から友達申請が届きました', friend_ok:'と友達になりました', report:'通報がありました'};
+function svgIcon(d, w){
+  var e = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  e.setAttribute('viewBox', '0 0 24 24'); e.setAttribute('width', w || '22'); e.setAttribute('height', w || '22'); e.setAttribute('fill', 'none');
+  e.setAttribute('stroke', 'currentColor'); e.setAttribute('stroke-width', '2.2'); e.setAttribute('stroke-linecap', 'round'); e.setAttribute('stroke-linejoin', 'round');
+  e.innerHTML = d; return e;
+}
+function svgBell(){ return svgIcon('<path d="M6 9a6 6 0 0 1 12 0c0 6 2 7 2 7H4s2-1 2-7"></path><path d="M10 20a2 2 0 0 0 4 0"></path>'); }
+function svgSearch(){ return svgIcon('<circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path>'); }
+function notifSheet(after){
+  var box = h('div', null, h('div', {class:'hint', text:'読み込み中'}));
+  var close = openSheet('通知', box, after);
+  function go(n){
+    api('/api/notifs/read', {body:{id:n.id}}).catch(function(){});
+    close();
+    if(n.tid) location.hash = '#/t/' + n.tid;
+    else if(n.kind === 'mention' && n.peer) location.hash = '#/dm/' + n.peer;
+    else if(n.kind === 'friend_req' || n.kind === 'friend_ok') location.hash = '#/friends';
+  }
+  function draw(){
+    api('/api/notifs').then(function(r){
+      cacheUsers(r.users); box.innerHTML = '';
+      if(!r.items.length){ box.appendChild(h('div', {class:'empty'}, orb(72, 1, {bob:true}), h('p', {text:'通知はまだありません'}))); return; }
+      if(r.unread) box.appendChild(h('button', {type:'button', class:'b3 soft sm', text:'すべて既読にする', onclick:function(){ api('/api/notifs/read', {body:{}}).then(draw); }}));
+      r.items.forEach(function(n){
+        var who = n.actor ? user(n.actor).name : '';
+        box.appendChild(h('button', {type:'button', class:'nrow' + (n.rd ? '' : ' new'), onclick:function(){ go(n); }},
+          n.actor ? avatar(n.actor, 40) : orb(40, 5, {face:false}),
+          h('div', {class:'nm'}, h('b', {text:who}), (n.kind === 'report' ? '' : '') + NKIND[n.kind], h('small', {text:n.text || ''})),
+          h('span', {class:'ago', text:ago(n.ts)})));
+      });
+    }).catch(function(){ box.innerHTML = ''; box.appendChild(h('div', {class:'hint', text:'読み込めませんでした'})); });
+  }
+  draw();
+}
+function highlight(text, q){
+  var frag = document.createDocumentFragment(), i = text.toLowerCase().indexOf(q.toLowerCase());
+  if(i < 0) { frag.appendChild(document.createTextNode(text.slice(0, 90))); return frag; }
+  var from = Math.max(0, i - 18), to = Math.min(text.length, i + q.length + 60);
+  frag.appendChild(document.createTextNode((from > 0 ? '…' : '') + text.slice(from, i)));
+  frag.appendChild(h('mark', {text:text.slice(i, i + q.length)}));
+  frag.appendChild(document.createTextNode(text.slice(i + q.length, to) + (to < text.length ? '…' : '')));
+  return frag;
+}
+function searchSheet(gid){
+  var inp = h('input', {class:'field', type:'search', placeholder:gid ? 'この部屋の投稿を探す' : '投稿とコメントを探す', 'aria-label':'検索', autocomplete:'off'});
+  var res = h('div'), timer, last = '';
+  inp.addEventListener('input', function(){
+    clearTimeout(timer);
+    var q = inp.value.trim();
+    timer = setTimeout(async function(){
+      last = q; res.innerHTML = '';
+      if(!q) return;
+      try{
+        var r = await api('/api/find?q=' + encodeURIComponent(q) + (gid ? '&gid=' + gid : ''));
+        if(q !== last) return;
+        cacheUsers(r.users);
+        if(!r.items.length){ res.appendChild(h('div', {class:'hint', text:'見つかりませんでした'})); return; }
+        r.items.forEach(function(it){
+          res.appendChild(h('button', {type:'button', class:'srow', onclick:function(){ close(); location.hash = '#/t/' + it.tid; }},
+            h('div', {class:'smeta', text:it.gname + '  ' + user(it.author).name + '  ' + ago(it.ts) + (it.kind === 'comment' ? '  コメント' : '')}),
+            h('div', {class:'stxt'}, highlight(it.body, q))));
+        });
+      }catch(e){ res.appendChild(h('div', {class:'hint', text:errMsg(e)})); }
+    }, 300);
+  });
+  var close = openSheet(gid ? '部屋の中を探す' : '探す', h('div', null, inp, res));
+  setTimeout(function(){ inp.focus(); }, 60);
+}
+
+/* ---------- security / privacy ---------- */
+function recoverySheet(code, title){
+  var box = h('div', {style:'text-align:center'},
+    h('div', {class:'hint', text:'パスワードを忘れたときに、これがないと戻せません 画面を閉じる前に、メモかスクリーンショットで残してください'}),
+    h('div', {class:'code', text:code}),
+    h('div', {class:'btnrow', style:'justify-content:center'}, h('button', {type:'button', class:'b3 sm', text:'コピー', onclick:function(){ copyText(code); }})),
+    h('button', {type:'button', class:'b3 block', style:'margin-top:14px', text:'メモしました', onclick:function(){ close(); }}));
+  var close = openSheet(title || '復旧コード', box);
+}
+function resetSheet(){
+  var handle = h('input', {class:'field', type:'text', placeholder:'ユーザーID', autocapitalize:'none', 'aria-label':'ユーザーID'});
+  var code = h('input', {class:'field code-in', type:'text', placeholder:'XXXX-XXXX-XXXX', autocapitalize:'characters', autocomplete:'off', 'aria-label':'復旧コード'});
+  var pw = h('input', {class:'field', type:'password', placeholder:'新しいパスワード 8文字以上', autocomplete:'new-password', 'aria-label':'新しいパスワード'});
+  var err = h('div', {class:'err', role:'alert'});
+  var go = h('button', {type:'button', class:'b3 block', text:'パスワードを変える'});
+  go.addEventListener('click', async function(){
+    err.textContent = ''; go.disabled = true;
+    try{
+      var r = await api('/api/reset', {body:{handle:handle.value, code:code.value, pw:pw.value}});
+      st.me = r.me; close(); location.hash = '#/'; render(); setTimeout(function(){ recoverySheet(r.recovery, '新しい復旧コード'); }, 250);
+    }catch(e){ err.textContent = errMsg(e); go.disabled = false; }
+  });
+  var close = openSheet('パスワードの再設定', h('div', null,
+    h('div', {class:'hint', style:'margin-bottom:8px', text:'登録したときにもらった復旧コードが必要です'}), handle, code, pw, err, go));
+}
+function adminSheet(){
+  var box = h('div', null, h('div', {class:'hint', text:'読み込み中'}));
+  openSheet('通報', box);
+  function draw(){
+    api('/api/admin/reports').then(function(r){
+      box.innerHTML = '';
+      if(!r.items.length) box.appendChild(h('div', {class:'hint', text:'未対応の通報はありません'}));
+      r.items.forEach(function(it){
+        box.appendChild(h('div', {class:'rep'},
+          h('div', {class:'smeta', text:it.kind + '  @' + it.reporter + '  ' + ago(it.ts)}), h('div', {class:'stxt', text:it.text || '(本文なし)'}),
+          h('div', {class:'hint', text:it.reason || ''}),
+          h('button', {type:'button', class:'b3 sm soft', text:'対応した', onclick:function(){ api('/api/admin/reports/resolve', {body:{id:it.id}}).then(draw); }})));
+      });
+    }).catch(function(e){ box.innerHTML = ''; box.appendChild(h('div', {class:'hint', text:errMsg(e)})); });
+  }
+  draw();
+}
+function settingsSheet(){
+  var me = st.me, box = h('div');
+  function draw(){
+    box.innerHTML = '';
+    box.appendChild(h('div', {class:'lbl', style:'margin-top:0', text:'メッセージの既読'}));
+    box.appendChild(h('div', {class:'hint', text:'相手に「既読」を見せるか選べます（見せないときは、相手の既読も見えません）'}));
+    box.appendChild(h('div', {class:'chips'},
+      h('button', {type:'button', class:'chip' + (!me.hideRead ? ' on' : ''), text:'見せる', onclick:function(){ setRead(false); }}),
+      h('button', {type:'button', class:'chip' + (me.hideRead ? ' on' : ''), text:'見せない', onclick:function(){ setRead(true); }})));
+    box.appendChild(h('div', {class:'lbl', text:'ブロックしている人'}));
+    var bl = h('div', null, h('div', {class:'hint', text:'読み込み中'}));
+    box.appendChild(bl);
+    api('/api/blocks').then(function(r){
+      cacheUsers((function(){ var m = {}; r.users.forEach(function(u){ m[u.id] = u; }); return m; })());
+      bl.innerHTML = '';
+      if(!r.users.length) bl.appendChild(h('div', {class:'hint', text:'ブロックしている人はいません'}));
+      r.users.forEach(function(u){
+        bl.appendChild(h('div', {class:'row'}, avatar(u.id, 40), h('div', {class:'nm'}, u.name, h('small', {text:'@' + u.handle})),
+          h('button', {type:'button', class:'b3 sm soft', text:'解除', onclick:function(){ api('/api/blocks/remove', {body:{id:u.id}}).then(draw); }})));
+      });
+    }).catch(function(){ bl.innerHTML = ''; });
+    box.appendChild(h('div', {class:'lbl', text:'パスワード'}));
+    var oldPw = h('input', {class:'field', type:'password', placeholder:'いまのパスワード', autocomplete:'current-password', 'aria-label':'いまのパスワード'});
+    var newPw = h('input', {class:'field', type:'password', placeholder:'新しいパスワード 8文字以上', autocomplete:'new-password', 'aria-label':'新しいパスワード', style:'margin-top:8px'});
+    box.appendChild(oldPw); box.appendChild(newPw);
+    box.appendChild(h('button', {type:'button', class:'b3 block', style:'margin-top:10px', text:'パスワードを変える', onclick:async function(){
+      try{ await api('/api/password', {body:{old:oldPw.value, pw:newPw.value}}); oldPw.value = ''; newPw.value = ''; toast('パスワードを変えました'); }catch(e){ toast(errMsg(e)); }
+    }}));
+    box.appendChild(h('div', {class:'lbl', text:'復旧コード'}));
+    box.appendChild(h('div', {class:'hint', text:'パスワードを忘れたときに使います 作り直すと、古いコードは使えなくなります'}));
+    var rpw = h('input', {class:'field', type:'password', placeholder:'いまのパスワード', autocomplete:'current-password', 'aria-label':'パスワード（復旧コード用）'});
+    box.appendChild(rpw);
+    box.appendChild(h('button', {type:'button', class:'b3 soft block', style:'margin-top:10px', text:'復旧コードをつくる', onclick:async function(){
+      try{ var r = await api('/api/recovery', {body:{pw:rpw.value}}); rpw.value = ''; recoverySheet(r.recovery); }catch(e){ toast(errMsg(e)); }
+    }}));
+    if(me.admin) box.appendChild(h('button', {type:'button', class:'b3 soft block', style:'margin-top:18px', text:'通報を見る（管理）', onclick:adminSheet}));
+  }
+  async function setRead(v){
+    try{ var r = await api('/api/me', {body:{hideRead:v}}); st.me = r.me; me = r.me; draw(); }catch(e){ toast(errMsg(e)); }
+  }
+  draw();
+  openSheet('プライバシーと安全', box);
+}
+
 /* ---------- home ---------- */
 function homeView(tab){
   var body = h('div');
   var nav = h('nav', {class:'nav', 'aria-label':'メニュー'});
-  var groups = null, fr = null, dms = null, lastSig = '', friendsUI = null, stampsUI = null, dmUI = null, killHero = null;
+  var groups = null, fr = null, dms = null, nf = null, lastSig = '', friendsUI = null, stampsUI = null, dmUI = null, killHero = null;
 
   var heroBox = tab === 'groups' ? h('div', {class:'hero3d'}) : null;
   if(heroBox) killHero = mountHero(heroBox);
+  var topR = h('div', {class:'topr'});
   var el = h('div', {class:'page'},
-    h('header', {class:'top'}, heroBox ? h('span') : h('img', {class:'wm', src:'/assets/dara-wordmark.png', alt:'DARA'}),
-      h('button', {type:'button', 'aria-label':'プロフィール', onclick:profileSheet}, avatar(st.me.id, 38))),
+    h('header', {class:'top'}, heroBox ? h('span') : h('img', {class:'wm', src:'/assets/dara-wordmark.png', alt:'DARA'}), topR),
     heroBox, body, nav);
+  function drawTop(){
+    topR.innerHTML = '';
+    var nu = nf ? nf.unread : 0;
+    topR.appendChild(h('button', {type:'button', class:'topbtn', 'aria-label':'探す', onclick:function(){ searchSheet(); }}, svgSearch()));
+    topR.appendChild(h('button', {type:'button', class:'topbtn', 'aria-label':'通知' + (nu ? ' ' + nu + '件' : ''), onclick:function(){ notifSheet(function(){ load(true); }); }}, svgBell(), nu ? h('span', {class:'dot', text:nu > 99 ? '99+' : nu}) : null));
+    topR.appendChild(h('button', {type:'button', 'aria-label':'プロフィール', onclick:profileSheet}, avatar(st.me.id, 38)));
+  }
 
   function drawNav(){
     nav.innerHTML = '';
@@ -655,7 +930,7 @@ function homeView(tab){
   }
   function toMap(arr){ var m = {}; arr.forEach(function(u){ m[u.id] = u; }); return m; }
   function draw(){
-    drawNav();
+    drawNav(); drawTop();
     if(tab === 'dm'){
       if(!dmUI){ dmUI = buildDm(); body.innerHTML = ''; body.appendChild(dmUI.el); }
       dmUI.update();
@@ -668,12 +943,14 @@ function homeView(tab){
   }
   async function load(force){
     try{
-      var r = await Promise.all([api('/api/groups'), api('/api/friends'), api('/api/dms')]);
-      cacheUsers(r[0].users); cacheStamps(r[0].stamps); cacheUsers(r[2].users);
+      var r = await Promise.all([api('/api/groups'), api('/api/friends'), api('/api/dms'), api('/api/notifs')]);
+      cacheUsers(r[0].users); cacheStamps(r[0].stamps); cacheUsers(r[2].users); cacheUsers(r[3].users);
+      var tot = r[2].unread + r[3].unread;
+      document.title = (tot ? '(' + tot + ') ' : '') + 'DARA';
       [r[1].friends, r[1].incoming, r[1].sent].forEach(function(a){ cacheUsers(toMap(a)); });
       var sig = JSON.stringify(r);
       if(sig === lastSig && !force) return;
-      lastSig = sig; groups = r[0].groups; fr = r[1]; dms = r[2]; draw();
+      lastSig = sig; groups = r[0].groups; fr = r[1]; dms = r[2]; nf = r[3]; draw();
     }catch(e){}
   }
   var stop = poll(load, 10000);
@@ -804,7 +1081,7 @@ function groupInfoSheet(gid, info){
 
 function groupView(gid){
   var banner = h('div', {class:'banner'}), feed = h('div'), group = null, threads = null, lastSig = '';
-  var entry = h('button', {type:'button', class:'entry', onclick:function(){ openCompose(gid, load); }}, avatar(st.me.id, 44), h('span', {text:'いま何してる'}));
+  var entry = h('button', {type:'button', class:'entry', onclick:function(){ openCompose(gid, load, function(){ return group ? group.members.map(user) : []; }); }}, avatar(st.me.id, 44), h('span', {text:'いま何してる'}));
   var el = h('div', {class:'page'}, banner, entry, feed);
 
   function draw(){
@@ -822,7 +1099,7 @@ function groupView(gid){
     banner.appendChild(dc);
     banner.appendChild(h('h1', {text:group.name, style:S.fontStyle(group.tfont)}));
     if(group.desc) banner.appendChild(h('div', {class:'bdesc', text:group.desc}));
-    banner.appendChild(h('div', {class:'bfoot'}, stack, h('button', {type:'button', class:'pill', text:'メンバー ' + group.members.length + '人', onclick:function(){ groupInfoSheet(gid, load); }})));
+    banner.appendChild(h('div', {class:'bfoot'}, stack, h('div', {class:'pills'}, h('button', {type:'button', class:'pill', text:'探す', onclick:function(){ searchSheet(gid); }}), h('button', {type:'button', class:'pill', text:'メンバー ' + group.members.length + '人', onclick:function(){ groupInfoSheet(gid, load); }}))));
     feed.innerHTML = '';
     if(!threads){ feed.appendChild(h('div', {class:'hint', style:'padding:16px 4px', text:'読み込み中'})); return; }
     if(!threads.length) feed.appendChild(h('div', {class:'hint', style:'padding:16px 4px', text:'最初のスレッドを立ててみましょう'}));
@@ -846,28 +1123,56 @@ function groupView(gid){
   return {el:el, load:load, destroy:stop};
 }
 
-function openCompose(gid, after){
-  var close;
+function openCompose(gid, after, members){
+  var close, pollOn = false, opts = ['', ''];
+  var pollBox = h('div', {class:'pollmk'});
   var comp = makeComposer({
-    placeholder:'いま何してる', submitLabel:'投稿', rows:4,
-    onSubmit:function(text, ids){ if(!text && !ids.length) return Promise.resolve(); return api('/api/groups/' + gid + '/threads', {body:{text:text, images:ids}}); },
+    placeholder:'いま何してる', submitLabel:'投稿', rows:4, draft:'g:' + gid,
+    mentions:members, canEmpty:function(){ return pollOn && opts.filter(function(x){ return x.trim(); }).length >= 2; },
+    onSubmit:function(text, ids){
+      var poll = pollOn ? opts.map(function(x){ return x.trim(); }).filter(Boolean) : null;
+      if(!text && !ids.length && !(poll && poll.length >= 2)) return Promise.resolve();
+      return api('/api/groups/' + gid + '/threads', {body:{text:text, images:ids, poll:poll && poll.length >= 2 ? poll : undefined}});
+    },
     onDone:function(){ close(); if(after) after(true); }
   });
-  close = openSheet('新しいスレッド', comp.el);
+  function drawPoll(){
+    pollBox.innerHTML = '';
+    pollBox.appendChild(h('button', {type:'button', class:'chip' + (pollOn ? ' on' : ''), 'aria-pressed':pollOn ? 'true' : 'false', text:pollOn ? 'アンケートをやめる' : 'アンケートをつける', onclick:function(){ pollOn = !pollOn; drawPoll(); comp.sync(); }}));
+    if(!pollOn) return;
+    opts.forEach(function(v, i){
+      var inp = h('input', {class:'field', type:'text', maxlength:'30', placeholder:'選択肢 ' + (i + 1), value:v, 'aria-label':'選択肢 ' + (i + 1), style:'margin-top:8px'});
+      inp.addEventListener('input', function(){ opts[i] = inp.value; comp.sync(); });
+      pollBox.appendChild(inp);
+    });
+    if(opts.length < 6) pollBox.appendChild(h('button', {type:'button', class:'ghost', text:'＋ 選択肢をふやす', onclick:function(){ opts.push(''); drawPoll(); }}));
+  }
+  drawPoll();
+  close = openSheet('新しいスレッド', h('div', null, pollBox, h('div', {style:'height:10px'}), comp.el));
   setTimeout(function(){ comp.focus(); }, 60);
 }
 
 /* ---------- thread ---------- */
 function threadView(tid){
-  var head = h('div', {class:'tbar'}), postBox = h('div'), list = h('div'), data = null, lastSig = '', gid = null;
+  var head = h('div', {class:'tbar'}), postBox = h('div'), list = h('div'), data = null, lastSig = '', gid = null, replyTo = null;
+  var replyBar = h('div', {class:'replybar'});
+  function drawReply(){
+    replyBar.innerHTML = '';
+    if(!replyTo){ replyBar.style.display = 'none'; return; }
+    replyBar.style.display = 'flex';
+    replyBar.appendChild(h('span', {text:user(replyTo.author).name + ' さんに返信'}));
+    replyBar.appendChild(h('button', {type:'button', class:'xbtn', 'aria-label':'返信をやめる', text:'×', onclick:function(){ replyTo = null; drawReply(); }}));
+  }
   var comp = makeComposer({
-    placeholder:'コメントする', submitLabel:'送信',
-    onSubmit:function(text, ids){ if(!text && !ids.length) return Promise.resolve(); return api('/api/threads/' + tid + '/comments', {body:{text:text, images:ids}}); },
-    onStamp:function(id){ return api('/api/threads/' + tid + '/comments', {body:{stamp:id}}); },
-    onDone:function(){ load(true); }
+    placeholder:'コメントする', submitLabel:'送信', draft:'t:' + tid,
+    mentions:function(){ return data ? data.group.members.map(user) : []; },
+    onSubmit:function(text, ids){ if(!text && !ids.length) return Promise.resolve(); return api('/api/threads/' + tid + '/comments', {body:{text:text, images:ids, parent:replyTo ? replyTo.id : undefined}}); },
+    onStamp:function(id){ return api('/api/threads/' + tid + '/comments', {body:{stamp:id, parent:replyTo ? replyTo.id : undefined}}); },
+    onDone:function(){ replyTo = null; drawReply(); load(true); }
   });
-  var dock = h('div', {class:'dock'}, comp.el);
+  var dock = h('div', {class:'dock'}, replyBar, comp.el);
   var el = h('div', {class:'page'}, head, postBox, list, dock);
+  drawReply();
 
   function draw(){
     if(!data) return;
@@ -881,9 +1186,20 @@ function threadView(tid){
     list.innerHTML = '';
     list.appendChild(h('div', {class:'cdiv', text:'コメント ' + cs.length}));
     if(!cs.length) list.appendChild(h('div', {class:'hint', style:'padding:10px 4px', text:'最初のコメントを書いてみましょう'}));
+    var ids = {}, kids = {};
+    cs.forEach(function(c){ ids[c.id] = 1; });
+    cs.forEach(function(c){ if(c.parent && ids[c.parent]){ (kids[c.parent] = kids[c.parent] || []).push(c); } });
+    function row(c, isReply){
+      var el2 = postEl(c, {onReact:function(){ load(true); },
+        extra:postTools('comment', c, roomOwner, {edit:function(){ load(true); }, del:function(){ load(true); },
+          reply:function(p){ replyTo = p; drawReply(); comp.focus(); }})});
+      if(isReply) el2.classList.add('reply');
+      return el2;
+    }
     cs.forEach(function(c){
-      list.appendChild(postEl(c, {onReact:function(){ load(true); },
-        extra:postTools('comment', c, roomOwner, {edit:function(){ load(true); }, del:function(){ load(true); }})}));
+      if(c.parent && ids[c.parent]) return;
+      list.appendChild(row(c, false));
+      (kids[c.id] || []).forEach(function(r){ list.appendChild(row(r, true)); });
     });
   }
   async function load(force){
@@ -912,25 +1228,31 @@ function addView(handle){
   async function load(){
     try{
       var r = await api('/api/u/' + encodeURIComponent(handle));
-      cacheUsers(oneU(r.user)); draw(r.user, r.rel);
+      cacheUsers(oneU(r.user)); draw(r.user, r.rel, r.blocked);
     }catch(e){ body.innerHTML = ''; body.appendChild(h('div', {class:'hint', text:errMsg(e)})); }
   }
   function oneU(u){ var m = {}; m[u.id] = u; return m; }
-  function draw(u, rel){
+  function draw(u, rel, blocked){
     body.innerHTML = '';
     body.appendChild(avatar(u.id, 96));
     body.appendChild(h('div', {style:'font-weight:900;font-size:22px', text:u.name}));
     body.appendChild(h('div', {class:'hint', text:'@' + u.handle}));
     if(u.bio) body.appendChild(h('div', {style:'max-width:320px;font-size:14px;color:var(--sub);text-wrap:balance', text:u.bio}));
     var label = {none:'友達に申請', incoming:'承認して友達になる', sent:'申請しました', friend:'友達です', self:'これはあなたです'}[rel];
-    var btn = h('button', {type:'button', class:'b3 block', style:'max-width:320px', text:label, disabled:rel === 'sent' || rel === 'friend' || rel === 'self'});
+    var btn = h('button', {type:'button', class:'b3 block', style:'max-width:320px', text:label, disabled:blocked || rel === 'sent' || rel === 'friend' || rel === 'self'});
     btn.addEventListener('click', async function(){
       btn.disabled = true;
-      try{ var r = await api('/api/friends/request', {body:{handle:u.handle}}); draw(u, r.rel); toast(r.rel === 'friend' ? '友達になりました' : '申請しました'); }
+      try{ var r = await api('/api/friends/request', {body:{handle:u.handle}}); draw(u, r.rel, false); toast(r.rel === 'friend' ? '友達になりました' : '申請しました'); }
       catch(e){ toast(errMsg(e)); btn.disabled = false; }
     });
     body.appendChild(btn);
     if(rel === 'friend') body.appendChild(h('button', {type:'button', class:'b3 soft block', style:'max-width:320px', text:'メッセージを送る', onclick:function(){ location.hash = '#/dm/' + u.id; }}));
+    if(rel !== 'self'){
+      body.appendChild(h('div', {class:'ptools', style:'justify-content:center;margin-top:10px'},
+        blocked ? h('button', {type:'button', class:'ghost', text:'ブロックを解除', onclick:function(){ api('/api/blocks/remove', {body:{id:u.id}}).then(function(){ toast('解除しました'); load(); }); }})
+          : h('button', {type:'button', class:'ghost', text:'ブロック', onclick:function(){ blockUser(u.id, function(){ load(); }); }}),
+        h('button', {type:'button', class:'ghost', text:'通報', onclick:function(){ reportSheet('user', u.id); }})));
+    }
   }
   load();
   return {el:pg.el, destroy:function(){}};
@@ -940,7 +1262,7 @@ function addView(handle){
 function dmView(peer){
   var head = h('div', {class:'tbar'}), list = h('div', {class:'dmlist'}), data = null, lastSig = '', lastCount = -1;
   var comp = makeComposer({
-    placeholder:'メッセージ', submitLabel:'送信',
+    placeholder:'メッセージ', submitLabel:'送信', draft:'dm:' + peer, mentions:function(){ return [user(peer)]; },
     onSubmit:function(text, ids){ if(!text && !ids.length) return Promise.resolve(); return api('/api/dms/' + peer, {body:{text:text, images:ids}}); },
     onStamp:function(id){ return api('/api/dms/' + peer, {body:{stamp:id}}); },
     onDone:function(){ load(true); }
@@ -956,14 +1278,17 @@ function dmView(peer){
     var nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 140;
     list.innerHTML = '';
     if(!data.messages.length) list.appendChild(h('div', {class:'hint', style:'padding:30px 4px;text-align:center', text:'最初のメッセージを送ってみましょう'}));
-    data.messages.forEach(function(m){
+    var lastRead = -1;
+    data.messages.forEach(function(m, i){ if(m.author === st.me.id && data.peerRead && m.ts <= data.peerRead) lastRead = i; });
+    data.messages.forEach(function(m, i){
       var mine = m.author === st.me.id;
       var col = h('div', {class:'dmcol'});
-      if(m.text) col.appendChild(h('div', {class:'bub', text:m.text}));
+      if(m.text) col.appendChild(h('div', {class:'bub'}, richText(m.text)));
       if(m.stamp) col.appendChild(h('div', {class:'stampbig'}, stampEl(m.stamp, 104)));
       var md = media(m.images); if(md) col.appendChild(md);
       var rb = reactBar(m, {onReact:function(){ load(true); }}); if(rb) col.appendChild(rb);
-      var meta = h('div', {class:'dmmeta'}, h('span', {text:ago(m.ts)}));
+      var meta = h('div', {class:'dmmeta'}, h('span', {text:ago(m.ts)}), i === lastRead ? h('span', {class:'readmk', text:'既読'}) : null);
+      if(!mine) meta.appendChild(h('button', {type:'button', class:'ghost', text:'通報', onclick:function(){ reportSheet('dm', m.id); }}));
       if(mine) meta.appendChild(h('button', {type:'button', class:'ghost', text:'削除', onclick:async function(){
         var ok = await askConfirm('このメッセージを削除しますか', '削除する');
         if(!ok) return;
