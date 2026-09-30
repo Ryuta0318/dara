@@ -244,22 +244,32 @@ function openRoomStyle(group, onSaved){
   var A = ui();
   var cur = {name:group.name, color:group.color, ccolor:group.ccolor || null, face:group.face || 0, shape:(group.shape || 0) % S.CHAR_SHAPES, pattern:group.pattern || 0,
     desc:group.desc || '', tfont:group.tfont || 0, banner:group.banner || null, decos:(group.decos || []).slice(0, 4)};
-  var pv = h('div', {class:'rpv'}), colorBox = h('div'), shapeBox = h('div', {class:'strip'}), faceBox = h('div', {class:'strip'}), patBox = h('div', {class:'chips'});
+  var pvStage = h('div', {class:'pvstage'}), pvModes = h('div', {class:'pvmodes'}), colorBox = h('div'), shapeBox = h('div', {class:'strip'}), faceBox = h('div', {class:'strip'}), patBox = h('div', {class:'chips'});
   var fontBox = h('div'), bannerBox = h('div'), decoBox = h('div', {class:'decoslots'});
   var nameIn = h('input', {class:'field', type:'text', maxlength:'30', value:cur.name, 'aria-label':'部屋の名前'});
   var descIn = h('input', {class:'field', type:'text', maxlength:'60', value:cur.desc, placeholder:'この部屋のひとこと', 'aria-label':'この部屋のひとこと'});
   var close;
   function val(){ return cur.ccolor || cur.color; }
+  // 完成イメージ：実際の部屋の画面と同じ部品で描く。スクロールしても、ずっと上に出ている
+  var PVK = 'dara.pvmode', mode = 'banner';
+  try{ mode = localStorage.getItem(PVK) === 'tile' ? 'tile' : 'banner'; }catch(e){}
   function drawPreview(){
-    pv.innerHTML = '';
-    var dark = S.roomDark(cur) || !!cur.banner;
-    var st = S.roomVars(cur) + (cur.banner ? ';--bimg:url(/api/images/' + cur.banner + ')' : '');
-    var decos = h('div', {class:'decos', 'aria-hidden':'true'});
-    cur.decos.forEach(function(id){ var sp = S.resolve(id, A.stampCache()); if(sp) decos.appendChild(S.render(sp, 34)); });
-    var title = h('b', {text:nameIn.value || '部屋の名前', style:S.fontStyle(cur.tfont)});
-    var card = h('div', {class:'rpv-card pt' + cur.pattern + (dark ? ' dk' : '') + (cur.banner ? ' hasimg' : ''), style:st},
-      h('div', {class:'rpv-text'}, title, h('small', {text:descIn.value})), S.roomChar(cur, 64, true), decos);
-    pv.appendChild(card);
+    var g = Object.assign({}, group, cur, {name:nameIn.value.trim() || '部屋の名前', desc:descIn.value.trim(), members:group.members || [], lastText:group.lastText || ''});
+    pvStage.innerHTML = '';
+    if(mode === 'banner'){
+      // 実物と同じ幅（スマホ幅）で描いてから、見える大きさに縮める。だから、配置も文字の折り返しも実物のまま
+      var wrap = h('div', {class:'pvscale'}), b = A.fillBanner(h('div'), g, {preview:true});
+      b.style.width = '390px'; wrap.appendChild(b); pvStage.appendChild(wrap);
+      requestAnimationFrame(function(){
+        var k = Math.min(1, pvStage.clientWidth / 390);
+        b.style.transform = 'scale(' + k + ')'; wrap.style.height = Math.round(b.offsetHeight * k) + 'px';
+      });
+    }else pvStage.appendChild(h('div', {class:'pvtile'}, A.tileEl(g, {preview:true})));
+    pvModes.innerHTML = '';
+    pvModes.appendChild(h('span', {class:'pvcap', text:'完成イメージ'}));
+    [['banner', '部屋の中'], ['tile', 'ホームのカード']].forEach(function(m){
+      pvModes.appendChild(chip(m[1], mode === m[0], function(){ mode = m[0]; try{ localStorage.setItem(PVK, mode); }catch(e){} drawPreview(); }));
+    });
   }
   function draw(){
     drawPreview();
@@ -308,10 +318,11 @@ function openRoomStyle(group, onSaved){
       A.toast('部屋の見た目を変えました'); close(); if(onSaved) onSaved();
     }catch(e){ A.toast(A.errMsg(e)); save.disabled = false; }
   });
-  var root = h('div', {class:'sted'}, pv, sec('なまえ'), nameIn, sec('ひとこと'), descIn, sec('いろ'), colorBox, sec('はいけいの写真'), bannerBox,
+  var pvTop = h('div', {class:'pvtop'}, pvModes, pvStage);
+  var root = h('div', {class:'sted'}, sec('なまえ'), nameIn, sec('ひとこと'), descIn, sec('いろ'), colorBox, sec('はいけいの写真'), bannerBox,
     sec('はいけいの模様'), patBox, sec('タイトルの書体'), fontBox, sec('かざりのスタンプ（4つまで）'), decoBox,
     sec('キャラクターのかたち'), shapeBox, sec('キャラクターのかお'), faceBox, save);
-  close = A.openSheet('部屋をカスタマイズ', root);
+  close = A.openSheet('部屋をカスタマイズ', root, null, {top:pvTop});
   draw();
 }
 

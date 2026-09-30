@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { generateVapid, sendPush, endpointAllowed } from "./push.js";
 
 const enc = new TextEncoder();
 const hex = (b) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
@@ -136,6 +137,8 @@ export class Hub extends DurableObject {
       "ALTER TABLE threads ADD COLUMN pinned INTEGER DEFAULT 0",
       "ALTER TABLE threads ADD COLUMN poll TEXT",
       "ALTER TABLE comments ADD COLUMN parent TEXT",
+      "ALTER TABLE users ADD COLUMN push_dm INTEGER DEFAULT 1",
+      "ALTER TABLE users ADD COLUMN push_other INTEGER DEFAULT 1",
     ]) {
       try {
         this.sql.exec(col);
@@ -153,6 +156,9 @@ export class Hub extends DurableObject {
     this.sql.exec("CREATE TABLE IF NOT EXISTS blocks(a TEXT, b TEXT, ts INTEGER, PRIMARY KEY(a,b))");
     this.sql.exec("CREATE TABLE IF NOT EXISTS reports(id TEXT PRIMARY KEY, reporter TEXT, kind TEXT, tgt TEXT, gid TEXT, reason TEXT, ts INTEGER, status TEXT DEFAULT 'open')");
     this.sql.exec("CREATE TABLE IF NOT EXISTS votes(tid TEXT, uid TEXT, opt INTEGER, PRIMARY KEY(tid,uid))");
+    this.sql.exec("CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT)");
+    this.sql.exec("CREATE TABLE IF NOT EXISTS push_subs(id TEXT PRIMARY KEY, uid TEXT, endpoint TEXT UNIQUE, p256dh TEXT, auth TEXT, ts INTEGER)");
+    this.sql.exec("CREATE INDEX IF NOT EXISTS ps_uid ON push_subs(uid)");
     for (const g of this.q("SELECT id FROM groups WHERE code IS NULL")) {
       this.run("UPDATE groups SET code=? WHERE id=?", this.newCode(), g.id);
     }
@@ -178,6 +184,7 @@ export class Hub extends DurableObject {
 
   async fetch(req) {
     try {
+      this.origin = new URL(req.url).origin;
       return await this.route(req, new URL(req.url));
     } catch (e) {
       if (e instanceof HttpError) return json({ error: e.message }, e.status);
@@ -240,6 +247,48 @@ export class Hub extends DurableObject {
     }
   }
 
+  // プッシュ通知用の鍵（最初に1回だけつくって、保存しておく）
+  async getVapid() {
+    if (this._vapid) return this._vapid;
+    const row = this.one("SELECT v FROM kv WHERE k='vapid'");
+    if (row) this._vapid = JSON.parse(row.v);
+    else {
+      this._vapid = await generateVapid();
+      this.run("INSERT INTO kv(k,v) VALUES('vapid',?)", JSON.stringify(this._vapid));
+    }
+    return this._vapid;
+  }
+  pushSubject() {
+    return this.origin && this.origin.startsWith("https://") ? this.origin : "mailto:dara@example.com";
+  }
+  // 端末に通知を送る（cat: 'dm' か 'other'。相手が切っていたら送らない）
+  pushTo(uid, cat, payload) {
+    try {
+      const pref = this.one("SELECT push_dm, push_other FROM users WHERE id=?", uid);
+      if (!pref || (cat === "dm" ? pref.push_dm === 0 : pref.push_other === 0)) return;
+      const subs = this.q("SELECT * FROM push_subs WHERE uid=?", uid);
+      if (!subs.length) return;
+      this.ctx.waitUntil(this.deliver(subs, payload, cat === "dm"));
+    } catch (e) {
+      console.error("push", String(e));
+    }
+  }
+  async deliver(subs, payload, urgent) {
+    const vapid = await this.getVapid();
+    const body = JSON.stringify(payload);
+    await Promise.all(
+      subs.map(async (sub) => {
+        try {
+          const code = await sendPush(sub, body, vapid, this.pushSubject(), { urgency: urgent ? "high" : "normal" });
+          if (code === 404 || code === 410) this.run("DELETE FROM push_subs WHERE id=?", sub.id);
+          else if (code >= 400) console.error("push status", code);
+        } catch (e) {
+          console.error("push fail", String(e));
+        }
+      })
+    );
+  }
+
   isAdmin(u) {
     const list = String((this.env && this.env.ADMIN_HANDLES) || "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
     return !!u && list.includes(u.handle);
@@ -263,6 +312,12 @@ export class Hub extends DurableObject {
     if (actor && this.blockedPair(uid, actor)) return;
     this.run("INSERT INTO notifs(id,uid,kind,actor,gid,tid,peer,text,ts) VALUES(?,?,?,?,?,?,?,?,?)", rid(10), uid, kind, actor || "", o.gid || null, o.tid || null, o.peer || null, o.text || "", Date.now());
     this.run("DELETE FROM notifs WHERE uid=? AND id NOT IN (SELECT id FROM notifs WHERE uid=? ORDER BY ts DESC LIMIT 200)", uid, uid);
+    // スマホへのプッシュ通知
+    const name = actor ? this.one("SELECT name FROM users WHERE id=?", actor)?.name || "" : "";
+    const room = o.gid ? this.one("SELECT name FROM groups WHERE id=?", o.gid)?.name : "";
+    const what = { comment: "がコメントしました", reply: "が返信しました", mention: "があなたを呼びました", react: "がスタンプを押しました", friend_req: "から友達申請が届きました", friend_ok: "と友達になりました", report: "通報がありました" }[kind] || "";
+    const url = o.tid ? `/#/t/${o.tid}` : kind === "mention" && o.peer ? `/#/dm/${o.peer}` : kind === "friend_req" || kind === "friend_ok" ? "/#/friends" : "/";
+    this.pushTo(uid, "other", { t: room || "DARA", b: `${name}${what}${o.text && kind !== "report" ? "\n" + o.text : ""}`, u: url, g: `${kind}:${o.tid || actor}` });
   }
   // @ で呼ばれた人（部屋のメンバーだけ / DMは相手だけ）
   mentioned(text, { gid, peer }) {
@@ -759,6 +814,45 @@ export class Hub extends DurableObject {
       return json({ ok: true });
     }
 
+    // ---- プッシュ通知 ----
+    if (path === "/api/push/key" && M === "GET") {
+      const v = await this.getVapid();
+      const pref = this.one("SELECT push_dm, push_other FROM users WHERE id=?", me.id);
+      return json({ key: v.publicKey, dm: pref.push_dm !== 0, other: pref.push_other !== 0, devices: this.one("SELECT COUNT(*) c FROM push_subs WHERE uid=?", me.id).c });
+    }
+    if (path === "/api/push/subscribe" && M === "POST") {
+      const b = await this.body(req);
+      const local = /^(127\.0\.0\.1|localhost)$/.test(new URL(req.url).hostname);
+      const endpoint = str(b.endpoint, 1000);
+      const p256dh = str(b.keys?.p256dh, 200);
+      const auth = str(b.keys?.auth, 100);
+      if (!endpointAllowed(endpoint, local) || !p256dh || !auth) throw bad("push");
+      this.rate("ps:" + me.id, 30, 36e5);
+      // 同じ端末で別の人がログインしたときは、最後にログインした人のものにする
+      this.run("DELETE FROM push_subs WHERE endpoint=?", endpoint);
+      this.run("INSERT INTO push_subs(id,uid,endpoint,p256dh,auth,ts) VALUES(?,?,?,?,?,?)", rid(10), me.id, endpoint, p256dh, auth, Date.now());
+      this.run("DELETE FROM push_subs WHERE uid=? AND id NOT IN (SELECT id FROM push_subs WHERE uid=? ORDER BY ts DESC LIMIT 8)", me.id, me.id);
+      return json({ ok: true });
+    }
+    if (path === "/api/push/unsubscribe" && M === "POST") {
+      const b = await this.body(req);
+      this.run("DELETE FROM push_subs WHERE uid=? AND endpoint=?", me.id, str(b.endpoint, 1000));
+      return json({ ok: true });
+    }
+    if (path === "/api/push/settings" && M === "POST") {
+      const b = await this.body(req);
+      if (b.dm !== undefined) this.run("UPDATE users SET push_dm=? WHERE id=?", b.dm ? 1 : 0, me.id);
+      if (b.other !== undefined) this.run("UPDATE users SET push_other=? WHERE id=?", b.other ? 1 : 0, me.id);
+      return json({ ok: true });
+    }
+    if (path === "/api/push/test" && M === "POST") {
+      this.rate("pt:" + me.id, 10, 36e5);
+      const subs = this.q("SELECT * FROM push_subs WHERE uid=?", me.id);
+      if (!subs.length) throw bad("no_device");
+      this.ctx.waitUntil(this.deliver(subs, { t: "DARA", b: "テスト通知です 届いていれば、ばっちりです", u: "/#/", g: "test" }, false));
+      return json({ sent: subs.length });
+    }
+
     // ---- ピン留め・アンケート ----
     if ((m = path.match(/^\/api\/threads\/([a-f0-9]{20})\/(pin|vote)$/)) && M === "POST") {
       const t = this.one("SELECT * FROM threads WHERE id=?", m[1]);
@@ -932,6 +1026,7 @@ export class Hub extends DurableObject {
         const id = rid(10);
         this.run("INSERT INTO dms(id,pk,author,body,imgs,stamp,ts) VALUES(?,?,?,?,?,?,?)", id, pk, me.id, text, JSON.stringify(imgs), stamp, Date.now());
         for (const uid of this.mentioned(text, { peer })) this.notify(uid, "mention", me.id, { peer: me.id, text: snip(text) });
+        this.pushTo(peer, "dm", { t: me.name, b: text ? str(text, 90) : stamp ? "スタンプを送りました" : "写真を送りました", u: `/#/dm/${me.id}`, g: `dm:${me.id}` });
         return json({ id });
       }
     }

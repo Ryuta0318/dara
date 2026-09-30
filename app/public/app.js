@@ -234,12 +234,15 @@ function svgSmile(){
 }
 
 /* ---------- sheet / confirm / lightbox ---------- */
-function openSheet(title, content, onClose){
+function openSheet(title, content, onClose, opts){
+  opts = opts || {};
   var back = h('div', {class:'sheet-back'}), closed = false;
   function close(){ if(closed) return; closed = true; back.remove(); if(onClose) onClose(); }
-  var panel = h('div', {class:'sheet', role:'dialog', 'aria-modal':'true', 'aria-label':title},
-    h('div', {class:'sheet-head'}, h('div', {class:'sheet-title', text:title}), h('button', {type:'button', class:'xbtn', 'aria-label':'閉じる', text:'×', onclick:close})),
-    content);
+  var head = h('div', {class:'sheet-head'}, h('div', {class:'sheet-title', text:title}), h('button', {type:'button', class:'xbtn', 'aria-label':'閉じる', text:'×', onclick:close}));
+  // opts.top があるときは、見出しとその部品を上に固定して、下だけスクロールさせる
+  var panel = opts.top
+    ? h('div', {class:'sheet split', role:'dialog', 'aria-modal':'true', 'aria-label':title}, head, opts.top, h('div', {class:'sbody'}, content))
+    : h('div', {class:'sheet', role:'dialog', 'aria-modal':'true', 'aria-label':title}, head, content);
   back.addEventListener('click', function(e){ if(e.target === back) close(); });
   back.appendChild(panel); overlay.appendChild(back);
   return close;
@@ -260,7 +263,7 @@ function lightbox(src){
   overlay.appendChild(lb);
 }
 
-window.DARAUI = {shrinkAs:shrinkAs, uploadRaw:uploadRaw, h:h, api:api, toast:toast, openSheet:openSheet, askConfirm:askConfirm, errMsg:errMsg, cacheStamps:cacheStamps, stampCache:function(){ return st.stamps; }};
+window.DARAUI = {fillBanner:function(){ return fillBanner.apply(null, arguments); }, tileEl:function(){ return tileEl.apply(null, arguments); }, shrinkAs:shrinkAs, uploadRaw:uploadRaw, h:h, api:api, toast:toast, openSheet:openSheet, askConfirm:askConfirm, errMsg:errMsg, cacheStamps:cacheStamps, stampCache:function(){ return st.stamps; }};
 
 /* ---------- images ---------- */
 function shrink(file, max, q, mime){
@@ -585,7 +588,7 @@ function profileSheet(){
   var box = h('div', null, av,
     h('button', {type:'button', class:'b3 soft sm', style:'margin-top:12px', text:'アイコンを選ぶ', onclick:function(){ file.click(); }}), file,
     h('div', {class:'lbl', text:'表示名'}), nameIn, h('div', {class:'lbl', text:'自己紹介'}), bioIn, save,
-    h('button', {type:'button', class:'b3 soft block', style:'margin-top:10px', text:'プライバシーと安全（既読・ブロック・パスワード）', onclick:function(){ close(); settingsSheet(); }}),
+    h('button', {type:'button', class:'b3 soft block', style:'margin-top:10px', text:'設定（通知・既読・ブロック・パスワード）', onclick:function(){ close(); settingsSheet(); }}),
     h('button', {type:'button', class:'b3 soft block', style:'margin-top:14px;color:var(--danger)', text:'ログアウト', onclick:async function(){
       try{ await api('/api/logout', {body:{}}); }catch(e){}
       st.me = null; close(); location.hash = '#/'; render();
@@ -617,6 +620,12 @@ function notifSheet(after){
   function draw(){
     api('/api/notifs').then(function(r){
       cacheUsers(r.users); box.innerHTML = '';
+      if(pushEnv().ok && Notification.permission === 'default' && !localStorage.getItem('dara.pushnudge')){
+        box.appendChild(h('div', {class:'nudge'}, h('b', {text:'スマホに通知を届けますか'}), h('div', {class:'hint', text:'アプリを閉じていても、コメントやメッセージに気づけます'}),
+          h('div', {class:'btnrow'},
+            h('button', {type:'button', class:'b3 sm', text:'オンにする', onclick:async function(){ try{ await pushOn(); toast('通知をオンにしました'); }catch(e){ toast(e.message === 'denied' ? '通知が許可されませんでした' : errMsg(e)); } draw(); }}),
+            h('button', {type:'button', class:'b3 sm soft', text:'あとで', onclick:function(){ try{ localStorage.setItem('dara.pushnudge', '1'); }catch(e){} draw(); }}))));
+      }
       if(!r.items.length){ box.appendChild(h('div', {class:'empty'}, orb(72, 1, {bob:true}), h('p', {text:'通知はまだありません'}))); return; }
       if(r.unread) box.appendChild(h('button', {type:'button', class:'b3 soft sm', text:'すべて既読にする', onclick:function(){ api('/api/notifs/read', {body:{}}).then(draw); }}));
       r.items.forEach(function(n){
@@ -665,6 +674,75 @@ function searchSheet(gid){
   setTimeout(function(){ inp.focus(); }, 60);
 }
 
+/* ---------- push notifications ---------- */
+var swReady = null;
+function b64uToU8(b){ var t = b.replace(/-/g, '+').replace(/_/g, '/'); var bin = atob(t + '='.repeat((4 - t.length % 4) % 4)); return Uint8Array.from(bin, function(c){ return c.charCodeAt(0); }); }
+function pushEnv(){
+  var standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone;
+  var ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  if(!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return {ok:false, why:ios && !standalone ? 'ios' : 'none'};
+  return {ok:true};
+}
+function pushReg(){ return navigator.serviceWorker.ready; }
+async function pushSub(){ try{ var r = await pushReg(); return await r.pushManager.getSubscription(); }catch(e){ return null; } }
+async function pushOn(){
+  var perm = await Notification.requestPermission();
+  if(perm !== 'granted') throw new Error('denied');
+  var k = await api('/api/push/key'), reg = await pushReg();
+  var sub = await reg.pushManager.getSubscription();
+  if(!sub) sub = await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey:b64uToU8(k.key)});
+  var j = sub.toJSON();
+  await api('/api/push/subscribe', {body:{endpoint:j.endpoint, keys:j.keys}});
+}
+async function pushOff(){
+  var sub = await pushSub();
+  if(sub){ var ep = sub.endpoint; await sub.unsubscribe(); try{ await api('/api/push/unsubscribe', {body:{endpoint:ep}}); }catch(e){} }
+}
+// 設定の中の「プッシュ通知」
+function pushSection(box){
+  var wrap = h('div');
+  box.appendChild(h('div', {class:'lbl', text:'スマホへのプッシュ通知'}));
+  box.appendChild(wrap);
+  var env = pushEnv();
+  if(!env.ok){
+    wrap.appendChild(h('div', {class:'hint', text:env.why === 'ios'
+      ? 'iPhoneでは、Safariの共有ボタンから「ホーム画面に追加」して、そのアイコンから開くと使えます（iOS 16.4以上）'
+      : 'このブラウザでは、プッシュ通知は使えません'}));
+    return;
+  }
+  async function draw(){
+    wrap.innerHTML = '';
+    var sub = await pushSub(), perm = Notification.permission, prefs = null;
+    try{ prefs = await api('/api/push/key'); }catch(e){}
+    if(perm === 'denied'){ wrap.appendChild(h('div', {class:'hint', text:'通知がブロックされています ブラウザの設定で、このサイトの通知を「許可」にしてください'})); return; }
+    if(!sub){
+      wrap.appendChild(h('div', {class:'hint', text:'アプリを閉じていても、コメントやメッセージが届きます'}));
+      wrap.appendChild(h('button', {type:'button', class:'b3 block', style:'margin-top:8px', text:'このスマホで通知を受け取る', onclick:async function(){
+        try{ await pushOn(); toast('通知をオンにしました'); }catch(e){ toast(e.message === 'denied' ? '通知が許可されませんでした' : errMsg(e)); }
+        draw();
+      }}));
+      return;
+    }
+    wrap.appendChild(h('div', {class:'hint', text:'このスマホの通知：オン' + (prefs && prefs.devices > 1 ? '（ほか ' + (prefs.devices - 1) + '台）' : '')}));
+    function sw(label, key){
+      var on = prefs ? prefs[key] : true;
+      return h('div', {class:'row'}, h('div', {class:'nm', text:label}),
+        h('button', {type:'button', class:'chip' + (on ? ' on' : ''), 'aria-pressed':on ? 'true' : 'false', text:on ? 'オン' : 'オフ', onclick:async function(){
+          try{ var b = {}; b[key] = !on; await api('/api/push/settings', {body:b}); }catch(e){ toast(errMsg(e)); }
+          draw();
+        }}));
+    }
+    wrap.appendChild(sw('メッセージ（DM）', 'dm'));
+    wrap.appendChild(sw('コメント・メンション・スタンプなど', 'other'));
+    wrap.appendChild(h('div', {class:'btnrow'},
+      h('button', {type:'button', class:'b3 sm soft', text:'テスト通知を送る', onclick:async function(){
+        try{ await api('/api/push/test', {body:{}}); toast('送りました 数秒で届きます'); }catch(e){ toast(errMsg(e)); }
+      }}),
+      h('button', {type:'button', class:'b3 sm soft', text:'このスマホはオフにする', onclick:async function(){ await pushOff(); toast('オフにしました'); draw(); }})));
+  }
+  draw();
+}
+
 /* ---------- security / privacy ---------- */
 function recoverySheet(code, title){
   var box = h('div', {style:'text-align:center'},
@@ -711,7 +789,8 @@ function settingsSheet(){
   var me = st.me, box = h('div');
   function draw(){
     box.innerHTML = '';
-    box.appendChild(h('div', {class:'lbl', style:'margin-top:0', text:'メッセージの既読'}));
+    pushSection(box);
+    box.appendChild(h('div', {class:'lbl', text:'メッセージの既読'}));
     box.appendChild(h('div', {class:'hint', text:'相手に「既読」を見せるか選べます（見せないときは、相手の既読も見えません）'}));
     box.appendChild(h('div', {class:'chips'},
       h('button', {type:'button', class:'chip' + (!me.hideRead ? ' on' : ''), text:'見せる', onclick:function(){ setRead(false); }}),
@@ -748,7 +827,44 @@ function settingsSheet(){
     try{ var r = await api('/api/me', {body:{hideRead:v}}); st.me = r.me; me = r.me; draw(); }catch(e){ toast(errMsg(e)); }
   }
   draw();
-  openSheet('プライバシーと安全', box);
+  openSheet('設定', box);
+}
+
+/* ---------- room banner / tile (used by the room page and the live preview) ---------- */
+function svgGear(){
+  return svgIcon('<circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>', '22');
+}
+function fillBanner(banner, group, o){
+  o = o || {};
+  var hasImg = !!group.banner;
+  banner.className = 'banner pt' + (group.pattern || 0) + (S.roomDark(group) || hasImg ? ' dk' : '') + (hasImg ? ' hasimg' : '') + (o.preview ? ' preview' : '');
+  banner.style.cssText = S.roomVars(group) + (hasImg ? ';--bimg:url(/api/images/' + group.banner + ')' : '');
+  banner.innerHTML = '';
+  var stack = h('div', {class:'stack'});
+  (group.members || []).slice(0, 5).forEach(function(id){ stack.appendChild(avatar(id, 34)); });
+  banner.appendChild(o.preview ? h('span', {class:'back', text:'‹ 戻る'}) : h('button', {type:'button', class:'back', text:'‹ 戻る', onclick:o.onBack}));
+  banner.appendChild(o.preview ? h('span', {class:'gear', 'aria-hidden':'true'}, svgGear())
+    : h('button', {type:'button', class:'gear', 'aria-label':'部屋の設定', onclick:o.onSettings}, svgGear()));
+  banner.appendChild(S.roomChar(group, 96, true));
+  var dc = h('div', {class:'decos', 'aria-hidden':'true'});
+  (group.decos || []).slice(0, 4).forEach(function(id){ dc.appendChild(stampEl(id, 46)); });
+  banner.appendChild(dc);
+  banner.appendChild(h('h1', {text:group.name, style:S.fontStyle(group.tfont)}));
+  if(group.desc) banner.appendChild(h('div', {class:'bdesc', text:group.desc}));
+  var n = (group.members || []).length;
+  banner.appendChild(h('div', {class:'bfoot'}, stack, o.preview
+    ? h('div', {class:'pills'}, h('span', {class:'pill', text:'探す'}), h('span', {class:'pill', text:'メンバー ' + n + '人'}))
+    : h('div', {class:'pills'}, h('button', {type:'button', class:'pill', text:'探す', onclick:o.onSearch}), h('button', {type:'button', class:'pill', text:'メンバー ' + n + '人', onclick:o.onSettings}))));
+  return banner;
+}
+function tileEl(g, o){
+  o = o || {};
+  var t = h('button', {type:'button', class:'tile' + (S.roomDark(g) || g.banner ? ' dk' : '') + (g.banner ? ' hasimg' : ''),
+    style:S.roomVars(g) + (g.banner ? ';--bimg:url(/api/images/' + g.banner + ')' : ''), onclick:o.onclick || null, tabindex:o.preview ? '-1' : null, 'aria-hidden':o.preview ? 'true' : null},
+    S.roomChar(g, 64, false), h('div', {class:'tname', text:g.name, style:S.fontStyle(g.tfont)}),
+    h('div', {class:'tfoot', text:(g.members || []).length + '人  ' + (g.lastText ? g.lastText : 'まだ投稿がありません')}));
+  if(!o.preview) tilt(t);
+  return t;
 }
 
 /* ---------- home ---------- */
@@ -791,11 +907,7 @@ function homeView(tab){
     }
     var grid = h('div', {class:'grid'});
     groups.forEach(function(g){
-      var t = h('button', {type:'button', class:'tile' + (S.roomDark(g) || g.banner ? ' dk' : '') + (g.banner ? ' hasimg' : ''),
-        style:S.roomVars(g) + (g.banner ? ';--bimg:url(/api/images/' + g.banner + ')' : ''), onclick:function(){ location.hash = '#/g/' + g.id; }},
-        S.roomChar(g, 64, false), h('div', {class:'tname', text:g.name, style:S.fontStyle(g.tfont)}),
-        h('div', {class:'tfoot', text:g.members.length + '人  ' + (g.lastText ? g.lastText : 'まだ投稿がありません')}));
-      tilt(t); grid.appendChild(t);
+      grid.appendChild(tileEl(g, {onclick:function(){ location.hash = '#/g/' + g.id; }}));
     });
     grid.appendChild(h('button', {type:'button', class:'tile new', onclick:createGroupSheet}, '＋ 部屋をつくる'));
     grid.appendChild(h('button', {type:'button', class:'tile new', onclick:joinSheet}, 'コードで入る'));
@@ -1086,20 +1198,7 @@ function groupView(gid){
 
   function draw(){
     if(!group) return;
-    var hasImg = !!group.banner;
-    banner.className = 'banner pt' + (group.pattern || 0) + (S.roomDark(group) || hasImg ? ' dk' : '') + (hasImg ? ' hasimg' : '');
-    banner.style.cssText = S.roomVars(group) + (hasImg ? ';--bimg:url(/api/images/' + group.banner + ')' : '');
-    banner.innerHTML = '';
-    var stack = h('div', {class:'stack'});
-    group.members.slice(0, 5).forEach(function(id){ stack.appendChild(avatar(id, 34)); });
-    banner.appendChild(h('button', {type:'button', class:'back', text:'‹ 戻る', onclick:function(){ location.hash = '#/'; }}));
-    banner.appendChild(S.roomChar(group, 96, true));
-    var dc = h('div', {class:'decos', 'aria-hidden':'true'});
-    (group.decos || []).slice(0, 4).forEach(function(id){ dc.appendChild(stampEl(id, 46)); });
-    banner.appendChild(dc);
-    banner.appendChild(h('h1', {text:group.name, style:S.fontStyle(group.tfont)}));
-    if(group.desc) banner.appendChild(h('div', {class:'bdesc', text:group.desc}));
-    banner.appendChild(h('div', {class:'bfoot'}, stack, h('div', {class:'pills'}, h('button', {type:'button', class:'pill', text:'探す', onclick:function(){ searchSheet(gid); }}), h('button', {type:'button', class:'pill', text:'メンバー ' + group.members.length + '人', onclick:function(){ groupInfoSheet(gid, load); }}))));
+    fillBanner(banner, group, {onBack:function(){ location.hash = '#/'; }, onSearch:function(){ searchSheet(gid); }, onSettings:function(){ groupInfoSheet(gid, load); }});
     feed.innerHTML = '';
     if(!threads){ feed.appendChild(h('div', {class:'hint', style:'padding:16px 4px', text:'読み込み中'})); return; }
     if(!threads.length) feed.appendChild(h('div', {class:'hint', style:'padding:16px 4px', text:'最初のスレッドを立ててみましょう'}));
@@ -1358,6 +1457,12 @@ function render(){
   app.appendChild(cur.el);
 }
 window.addEventListener('hashchange', render);
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('/sw.js').catch(function(){});
+  navigator.serviceWorker.addEventListener('message', function(e){
+    if(e.data && e.data.type === 'go'){ try{ location.hash = new URL(e.data.url).hash || '#/'; }catch(err){} }
+  });
+}
 
 api('/api/me').then(function(r){
   st.me = r.me;
