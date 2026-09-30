@@ -22,6 +22,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap">
+  <script>
+    /* オープニングを出すとき（トップから開いたとき、動きを減らす設定でないとき）は、描画の前に印をつけておく */
+    try {
+      if (!matchMedia("(prefers-reduced-motion: reduce)").matches && (!location.hash || location.hash === "#home") && !window.scrollY) document.documentElement.classList.add("intro");
+    } catch (e) {}
+  </script>
   <link rel="stylesheet" href="css/style.css">
   <link rel="modulepreload" href="vendor/three/three.module.min.js">
   <link rel="modulepreload" href="js/sdf.js">
@@ -186,6 +192,7 @@
 
   <footer class="footer">
     <img src="assets/logo.png" alt="DARA" width="84" height="38">
+    <button type="button" class="replay" id="replay-intro" data-i18n="replay">オープニングをもう一度</button>
     <small>© 2026 DARA</small>
   </footer>
 

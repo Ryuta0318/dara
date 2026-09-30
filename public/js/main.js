@@ -62,6 +62,7 @@ const EN = {
   "cta.title": "Hang out, just your crew",
   "cta.lead": "Got an invite code? Sign up here.",
   "cta.button": "Open DARA",
+  replay: "Watch the intro again",
 };
 
 const i18nEls = [...document.querySelectorAll("[data-i18n]")];
@@ -450,16 +451,29 @@ function pickRoom(i, x, y) {
   labelTimer = setTimeout(() => roomLabel.classList.remove("is-in"), 1800);
 }
 
+// オープニング：終わったら、メニューと文字をふわっと出す。何かあっても、6秒たったら必ず出す
+let heroApi = null;
+const endIntro = () => document.documentElement.classList.remove("intro");
+if (document.documentElement.classList.contains("intro")) setTimeout(endIntro, 9000);
+document.getElementById("replay-intro")?.addEventListener("click", () => {
+  scrollTo({ top: 0, behavior: "instant" });
+  if (heroApi && heroApi.replay) setTimeout(() => heroApi.replay(), 60);
+});
+
 if (hasWebGL()) {
   const fail = (err) => {
     console.error(err);
     document.documentElement.classList.add("no-webgl");
   };
-  import("./hero.js").then(({ initHero }) => initHero(document.getElementById("hero-canvas"))).catch(fail);
+  import("./hero.js")
+    .then(({ initHero }) => initHero(document.getElementById("hero-canvas")))
+    .then((hero) => { heroApi = hero; })
+    .catch((err) => { fail(err); endIntro(); });
   import("./icons.js").then(({ initIcons }) => initIcons(document.getElementById("icons-canvas"))).catch(fail);
   import("./rooms.js")
     .then(({ initRooms }) => initRooms(document.getElementById("rooms-canvas"), { onPick: pickRoom }))
     .catch(fail);
 } else {
   document.documentElement.classList.add("no-webgl");
+  setTimeout(endIntro, 900);
 }
