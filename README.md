@@ -55,4 +55,9 @@ node tools/capture-assets.mjs       # public/assets/logo.png を書き出す
 
 ## 公開
 
-`npx wrangler deploy` で Cloudflare Workers の静的アセットとして公開できます。独自ドメインは、ドメインを Cloudflare に追加したうえで `wrangler.jsonc` の `routes` を設定します。
+公開先のドメインは **dara-app.com**。
+
+1. dara-app.com を取得し、Cloudflare にサイトとして追加する（Cloudflare Registrar で取得すれば自動で追加される）
+2. `npx wrangler deploy` で公開すると、`wrangler.jsonc` の `routes` により `dara-app.com` と `www.dara-app.com` に紐づく
+
+`index.html` の canonical / OG の URL も `https://dara-app.com/` にしてあります。
