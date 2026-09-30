@@ -1,8 +1,31 @@
-# DARA — ランディングサイト
+# DARA
 
 友達だけが集まる、3Dでかわいいグループ型のスレッドSNS「DARA」の紹介サイト。
 
 黒い背景に、真珠のようにふくらんだ3D。ビルド不要の HTML / CSS / JavaScript と three.js（`public/vendor` に同梱）で作っています。
+
+## リポジトリの構成
+
+| 場所 | 中身 |
+| --- | --- |
+| `public/` | 紹介サイト（ランディング）。Cloudflare Workers の静的アセットとして公開（`wrangler.jsonc`、Worker名 `dara`） |
+| `app/` | アプリ本体（友達だけのスレッドSNS）。Worker + Durable Object（SQLite）+ 静的な画面（`app/wrangler.jsonc`、Worker名 `dara-app`） |
+
+### アプリ（`app/`）
+
+- 招待コードなしで登録できます。登録すると、自分だけの部屋「ひとりごと」が最初から1つできます。
+- 友達の追加は、IDで探す・QRを見せる / 読み取る・リンクを共有、の3通りです。
+- 部屋は誰でもつくれます。部屋ごとに8文字のコードがあり、コード・リンク・QRのどれでも入れます（友達でなくても入れます）。コードは、メンバーなら誰でも作り直せます。
+- 登録は同じ回線から1時間に10人まで、ログイン失敗は10分に8回まで、コードの入力は10分に30回までです。
+
+```sh
+# ローカルで動かす
+npx wrangler dev --config app/wrangler.jsonc
+# 公開する
+cd app && npx wrangler deploy
+```
+
+`setroom` のデータは、新しい `dara-app` には引き継がれません（別のDurable Objectです）。
 
 ## 3Dの体験
 

@@ -1,0 +1,19 @@
+// DARA アプリ本体（友達だけのスレッドSNS）
+//   cd app && npx wrangler deploy
+{
+  "name": "dara-app",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./public",
+    "not_found_handling": "single-page-application",
+    // /api/* は必ず Worker で処理する
+    "run_worker_first": ["/api/*"]
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "HUB", "class_name": "Hub" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Hub"] }]
+}
