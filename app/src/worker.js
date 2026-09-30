@@ -23,7 +23,7 @@ class HttpError extends Error {
   }
 }
 const bad = (m = "bad_request") => new HttpError(400, m);
-const pub = (u) => (u ? { id: u.id, handle: u.handle, name: u.name, color: u.color, avatar: u.avatar || null } : null);
+const pub = (u) => (u ? { id: u.id, handle: u.handle, name: u.name, color: u.color, avatar: u.avatar || null, bio: u.bio || "" } : null);
 const pair = (a, b) => (a < b ? [a, b] : [b, a]);
 const str = (v, max) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 
@@ -52,10 +52,15 @@ function cleanSpec(s) {
   s = s && typeof s === "object" ? s : {};
   return {
     v: 1,
-    shape: cInt(s.shape, 0, 7, 0),
+    shape: cInt(s.shape, 0, 8, 0),
     color: cleanColor(s.color),
     face: cInt(s.face, -1, 11, 0),
-    text: str(typeof s.text === "string" ? s.text.replace(/[\r\n]/g, " ") : "", 8),
+    text: str(typeof s.text === "string" ? s.text.replace(/[\r\n]/g, " ") : "", 12),
+    font: cInt(s.font, 0, 9, 0),
+    img: typeof s.img === "string" && /^[a-f0-9]{24}$/.test(s.img) ? s.img : "",
+    iz: cInt(s.iz, 100, 300, 100),
+    ix: cInt(s.ix, -50, 50, 0),
+    iy: cInt(s.iy, -50, 50, 0),
     tcolor: typeof s.tcolor === "string" && HEX.test(s.tcolor) ? s.tcolor.toLowerCase() : "",
     tsize: cInt(s.tsize, 0, 2, 1),
     tpos: cInt(s.tpos, 0, 2, 0),
@@ -109,6 +114,13 @@ export class Hub extends DurableObject {
       "ALTER TABLE groups ADD COLUMN ccolor TEXT",
       "ALTER TABLE groups ADD COLUMN pattern INTEGER DEFAULT 0",
       "ALTER TABLE comments ADD COLUMN stamp TEXT",
+      "ALTER TABLE groups ADD COLUMN deco TEXT",
+      "ALTER TABLE groups ADD COLUMN banner TEXT",
+      "ALTER TABLE groups ADD COLUMN tfont INTEGER DEFAULT 0",
+      "ALTER TABLE groups ADD COLUMN locked INTEGER DEFAULT 0",
+      "ALTER TABLE threads ADD COLUMN edited INTEGER",
+      "ALTER TABLE comments ADD COLUMN edited INTEGER",
+      "ALTER TABLE users ADD COLUMN bio TEXT",
     ]) {
       try {
         this.sql.exec(col);
@@ -118,6 +130,9 @@ export class Hub extends DurableObject {
     this.sql.exec("CREATE INDEX IF NOT EXISTS st_owner ON stamps(owner, ts)");
     this.sql.exec("CREATE TABLE IF NOT EXISTS reactions(tgt TEXT, uid TEXT, stamp TEXT, ts INTEGER, PRIMARY KEY(tgt,uid,stamp))");
     this.sql.exec("CREATE INDEX IF NOT EXISTS rx_tgt ON reactions(tgt)");
+    this.sql.exec("CREATE TABLE IF NOT EXISTS dms(id TEXT PRIMARY KEY, pk TEXT, author TEXT, body TEXT, imgs TEXT, stamp TEXT, ts INTEGER)");
+    this.sql.exec("CREATE INDEX IF NOT EXISTS dm_pk ON dms(pk, ts)");
+    this.sql.exec("CREATE TABLE IF NOT EXISTS dm_reads(uid TEXT, peer TEXT, ts INTEGER, PRIMARY KEY(uid,peer))");
     for (const g of this.q("SELECT id FROM groups WHERE code IS NULL")) {
       this.run("UPDATE groups SET code=? WHERE id=?", this.newCode(), g.id);
     }
@@ -155,7 +170,7 @@ export class Hub extends DurableObject {
     const m = (req.headers.get("cookie") || "").match(/(?:^|;\s*)sr=([a-f0-9]{48})/);
     if (!m) return null;
     const s = this.one("SELECT uid FROM sessions WHERE tok=?", await sha(m[1]));
-    return s ? this.one("SELECT id,handle,name,color,avatar FROM users WHERE id=?", s.uid) : null;
+    return s ? this.one("SELECT id,handle,name,color,avatar,bio FROM users WHERE id=?", s.uid) : null;
   }
 
   async startSession(uid) {
@@ -167,7 +182,7 @@ export class Hub extends DurableObject {
   users(ids) {
     const u = [...new Set(ids.filter(Boolean))].slice(0, 200);
     if (!u.length) return {};
-    const rows = this.q(`SELECT id,handle,name,color,avatar FROM users WHERE id IN (${u.map(() => "?").join(",")})`, ...u);
+    const rows = this.q(`SELECT id,handle,name,color,avatar,bio FROM users WHERE id IN (${u.map(() => "?").join(",")})`, ...u);
     const o = {};
     rows.forEach((r) => (o[r.id] = pub(r)));
     return o;
@@ -206,7 +221,39 @@ export class Hub extends DurableObject {
   }
 
   groupStyle(g) {
-    return { face: g.face || 0, shape: g.shape || 0, ccolor: g.ccolor || null, pattern: g.pattern || 0, desc: g.descr || "" };
+    let decos = [];
+    try {
+      decos = JSON.parse(g.deco || "[]");
+    } catch {}
+    return {
+      face: g.face || 0, shape: g.shape || 0, ccolor: g.ccolor || null, pattern: g.pattern || 0, desc: g.descr || "",
+      decos, banner: g.banner || null, tfont: g.tfont || 0, owner: g.owner, locked: !!g.locked,
+    };
+  }
+
+  // 部屋のデコに使われているスタンプの設計図
+  decoStamps(groups) {
+    return this.stampMap(groups.flatMap((g) => this.groupStyle(g).decos));
+  }
+
+  // 写真は自分がアップロードしたものだけ使える（ほかの人のスタンプのコピーは除く）
+  stampSpec(uid, raw, trusted = false) {
+    const spec = cleanSpec(raw);
+    if (spec.img && !trusted && !this.one("SELECT 1 x FROM images WHERE id=? AND owner=?", spec.img, uid)) spec.img = "";
+    return spec;
+  }
+
+  deleteGroup(gid) {
+    this.run("DELETE FROM reactions WHERE tgt IN (SELECT id FROM comments WHERE tid IN (SELECT id FROM threads WHERE gid=?)) OR tgt IN (SELECT id FROM threads WHERE gid=?)", gid, gid);
+    this.run("DELETE FROM comments WHERE tid IN (SELECT id FROM threads WHERE gid=?)", gid);
+    this.run("DELETE FROM threads WHERE gid=?", gid);
+    this.run("DELETE FROM gm WHERE gid=?", gid);
+    this.run("DELETE FROM groups WHERE id=?", gid);
+  }
+
+  // 見た目を変えられるか（ロック中はオーナーだけ）
+  canStyle(g, uid) {
+    return !g.locked || g.owner === uid;
   }
 
   stampOk(id) {
@@ -280,7 +327,8 @@ export class Hub extends DurableObject {
         const a = b.avatar === null ? null : this.ownImgs([b.avatar], me.id)[0] || null;
         this.run("UPDATE users SET avatar=? WHERE id=?", a, me.id);
       }
-      return json({ me: pub(this.one("SELECT id,handle,name,color,avatar FROM users WHERE id=?", me.id)) });
+      if (b.bio !== undefined) this.run("UPDATE users SET bio=? WHERE id=?", str(typeof b.bio === "string" ? b.bio.replace(/[\r\n]+/g, " ") : "", 80), me.id);
+      return json({ me: pub(this.one("SELECT id,handle,name,color,avatar,bio FROM users WHERE id=?", me.id)) });
     }
 
     if (path === "/api/images" && M === "POST") {
@@ -305,14 +353,14 @@ export class Hub extends DurableObject {
       const q = str(url.searchParams.get("q") || "", 30).replace(/[\\%_]/g, "").replace(/^@/, "");
       if (q.length < 2) return json({ users: [] });
       const rows = this.q(
-        "SELECT id,handle,name,color,avatar FROM users WHERE id!=? AND (handle LIKE ? ESCAPE '\\' OR name LIKE ? ESCAPE '\\') ORDER BY handle LIMIT 12",
+        "SELECT id,handle,name,color,avatar,bio FROM users WHERE id!=? AND (handle LIKE ? ESCAPE '\\' OR name LIKE ? ESCAPE '\\') ORDER BY handle LIMIT 12",
         me.id, q.toLowerCase() + "%", "%" + q + "%"
       );
       return json({ users: rows.map(pub) });
     }
     // 友達追加リンク / QR から開いたときの相手の確認用
     if ((m = path.match(/^\/api\/u\/([a-z0-9_]{3,20})$/)) && M === "GET") {
-      const u = this.one("SELECT id,handle,name,color,avatar FROM users WHERE handle=?", m[1]);
+      const u = this.one("SELECT id,handle,name,color,avatar,bio FROM users WHERE handle=?", m[1]);
       if (!u) throw new HttpError(404, "not_found");
       return json({ user: pub(u), rel: this.relation(me.id, u.id) });
     }
@@ -364,7 +412,7 @@ export class Hub extends DurableObject {
         ids = ids.concat(mem.slice(0, 8));
         return { id: g.id, name: g.name, color: g.color, ...this.groupStyle(g), last: g.last, lastText: g.last_text, members: mem };
       });
-      return json({ groups, users: this.users(ids) });
+      return json({ groups, users: this.users(ids), stamps: this.decoStamps(gs) });
     }
     if (path === "/api/groups" && M === "POST") {
       const b = await this.body(req);
@@ -381,7 +429,7 @@ export class Hub extends DurableObject {
       const g = code && this.one("SELECT * FROM groups WHERE code=?", code);
       if (!g) throw new HttpError(404, "no_room");
       const n = this.one("SELECT COUNT(*) c FROM gm WHERE gid=?", g.id).c;
-      return json({ group: { id: g.id, name: g.name, color: g.color, ...this.groupStyle(g), count: n }, already: this.member(g.id, me.id) });
+      return json({ group: { id: g.id, name: g.name, color: g.color, ...this.groupStyle(g), count: n }, already: this.member(g.id, me.id), stamps: this.decoStamps([g]) });
     }
     if (path === "/api/groups/join" && M === "POST") {
       const b = await this.body(req);
@@ -395,18 +443,20 @@ export class Hub extends DurableObject {
     if ((m = path.match(/^\/api\/groups\/([a-f0-9]{20})$/)) && M === "GET") {
       const g = this.needGroup(m[1], me.id);
       const mem = this.q("SELECT uid FROM gm WHERE gid=? ORDER BY ts", g.id).map((r) => r.uid);
-      return json({ group: { id: g.id, name: g.name, color: g.color, ...this.groupStyle(g), code: g.code, members: mem }, users: this.users(mem) });
+      return json({ group: { id: g.id, name: g.name, color: g.color, ...this.groupStyle(g), code: g.code, members: mem }, users: this.users(mem), stamps: this.decoStamps([g]) });
     }
     if ((m = path.match(/^\/api\/groups\/([a-f0-9]{20})\/code$/)) && M === "POST") {
-      // 漏れたときのために、メンバーなら誰でも作り直せる（古いコードは使えなくなる）
+      // 漏れたときのために作り直せる（古いコードは使えなくなる）。ロック中はオーナーだけ
       const g = this.needGroup(m[1], me.id);
+      if (!this.canStyle(g, me.id)) throw new HttpError(403, "locked");
       const code = this.newCode();
       this.run("UPDATE groups SET code=? WHERE id=?", code, g.id);
       return json({ code });
     }
     if ((m = path.match(/^\/api\/groups\/([a-f0-9]{20})\/style$/)) && M === "POST") {
-      // 部屋の見た目は、メンバーなら誰でも変えられる
+      // 部屋の見た目は、メンバーなら誰でも変えられる（オーナーがロックしたときは除く）
       const g = this.needGroup(m[1], me.id);
+      if (!this.canStyle(g, me.id)) throw new HttpError(403, "locked");
       const b = await this.body(req);
       this.rate("st:" + me.id, 60, 36e5);
       const set = [];
@@ -425,8 +475,38 @@ export class Hub extends DurableObject {
       if (b.face !== undefined) put("face", cInt(b.face, 0, 11, 0));
       if (b.shape !== undefined) put("shape", cInt(b.shape, 0, 7, 0));
       if (b.pattern !== undefined) put("pattern", cInt(b.pattern, 0, 4, 0));
+      if (b.tfont !== undefined) put("tfont", cInt(b.tfont, 0, 9, 0));
+      if (b.banner !== undefined) put("banner", b.banner === null ? null : this.ownImgs([b.banner], me.id)[0] || null);
+      if (b.decos !== undefined) {
+        const list = (Array.isArray(b.decos) ? b.decos : []).filter((x) => this.stampOk(x)).slice(0, 4);
+        put("deco", JSON.stringify(list));
+      }
       if (b.desc !== undefined) put("descr", str(typeof b.desc === "string" ? b.desc.replace(/[\r\n]/g, " ") : "", 60));
       if (set.length) this.run(`UPDATE groups SET ${set.join(",")} WHERE id=?`, ...val, g.id);
+      return json({ ok: true });
+    }
+    // ---- 部屋の管理（オーナーだけ） ----
+    if ((m = path.match(/^\/api\/groups\/([a-f0-9]{20})$/)) && M === "DELETE") {
+      const g = this.needGroup(m[1], me.id);
+      if (g.owner !== me.id) throw new HttpError(403, "owner_only");
+      this.deleteGroup(g.id);
+      return json({ ok: true });
+    }
+    if ((m = path.match(/^\/api\/groups\/([a-f0-9]{20})\/(kick|owner)$/)) && M === "POST") {
+      const g = this.needGroup(m[1], me.id);
+      if (g.owner !== me.id) throw new HttpError(403, "owner_only");
+      const b = await this.body(req);
+      const uid = str(b.uid, 40);
+      if (!uid || uid === me.id || !this.member(g.id, uid)) throw bad("user");
+      if (m[2] === "kick") this.run("DELETE FROM gm WHERE gid=? AND uid=?", g.id, uid);
+      else this.run("UPDATE groups SET owner=? WHERE id=?", uid, g.id);
+      return json({ ok: true });
+    }
+    if ((m = path.match(/^\/api\/groups\/([a-f0-9]{20})\/lock$/)) && M === "POST") {
+      const g = this.needGroup(m[1], me.id);
+      if (g.owner !== me.id) throw new HttpError(403, "owner_only");
+      const b = await this.body(req);
+      this.run("UPDATE groups SET locked=? WHERE id=?", b.locked ? 1 : 0, g.id);
       return json({ ok: true });
     }
     if ((m = path.match(/^\/api\/groups\/([a-f0-9]{20})\/members$/)) && M === "POST") {
@@ -440,11 +520,9 @@ export class Hub extends DurableObject {
     if ((m = path.match(/^\/api\/groups\/([a-f0-9]{20})\/leave$/)) && M === "POST") {
       const g = this.needGroup(m[1], me.id);
       this.run("DELETE FROM gm WHERE gid=? AND uid=?", g.id, me.id);
-      if (!this.one("SELECT 1 x FROM gm WHERE gid=?", g.id)) {
-        this.run("DELETE FROM comments WHERE tid IN (SELECT id FROM threads WHERE gid=?)", g.id);
-        this.run("DELETE FROM threads WHERE gid=?", g.id);
-        this.run("DELETE FROM groups WHERE id=?", g.id);
-      }
+      const next = this.one("SELECT uid FROM gm WHERE gid=? ORDER BY ts LIMIT 1", g.id);
+      if (!next) this.deleteGroup(g.id);
+      else if (g.owner === me.id) this.run("UPDATE groups SET owner=? WHERE id=?", next.uid, g.id);
       return json({ ok: true });
     }
 
@@ -453,7 +531,7 @@ export class Hub extends DurableObject {
       if (M === "GET") {
         const rows = this.q("SELECT * FROM threads WHERE gid=? ORDER BY last DESC LIMIT 100", g.id);
         const rx = this.reactsFor(rows.map((t) => t.id), me.id);
-        const threads = rows.map((t) => ({ id: t.id, author: t.author, text: t.body, images: JSON.parse(t.imgs || "[]"), ts: t.ts, last: t.last, count: t.ccount, reacts: rx[t.id] || [] }));
+        const threads = rows.map((t) => ({ id: t.id, author: t.author, text: t.body, images: JSON.parse(t.imgs || "[]"), ts: t.ts, edited: t.edited || null, last: t.last, count: t.ccount, reacts: rx[t.id] || [] }));
         return json({ threads, users: this.users(threads.map((t) => t.author)), stamps: this.stampMap(Object.values(rx).flat().map((r) => r.s)) });
       }
       if (M === "POST") {
@@ -476,19 +554,28 @@ export class Hub extends DurableObject {
         const rows = this.q("SELECT * FROM comments WHERE tid=? ORDER BY ts LIMIT 500", t.id);
         const rx = this.reactsFor([t.id, ...rows.map((c) => c.id)], me.id);
         const cs = rows.map((c) => ({
-          id: c.id, author: c.author, text: c.body, images: JSON.parse(c.imgs || "[]"), stamp: c.stamp || null, ts: c.ts, reacts: rx[c.id] || [],
+          id: c.id, author: c.author, text: c.body, images: JSON.parse(c.imgs || "[]"), stamp: c.stamp || null, ts: c.ts, edited: c.edited || null, reacts: rx[c.id] || [],
         }));
-        const g = this.one("SELECT name,color FROM groups WHERE id=?", t.gid);
+        const g = this.one("SELECT name,color,owner FROM groups WHERE id=?", t.gid);
         return json({
           stamps: this.stampMap([...Object.values(rx).flat().map((r) => r.s), ...cs.map((c) => c.stamp)]),
-          thread: { id: t.id, gid: t.gid, author: t.author, text: t.body, images: JSON.parse(t.imgs || "[]"), ts: t.ts, count: t.ccount, reacts: rx[t.id] || [] },
-          group: { id: t.gid, name: g.name, color: g.color },
+          thread: { id: t.id, gid: t.gid, author: t.author, text: t.body, images: JSON.parse(t.imgs || "[]"), ts: t.ts, edited: t.edited || null, count: t.ccount, reacts: rx[t.id] || [] },
+          group: { id: t.gid, name: g.name, color: g.color, owner: g.owner },
           comments: cs,
           users: this.users([t.author, ...cs.map((c) => c.author)]),
         });
       }
-      if (M === "DELETE") {
+      if (M === "PATCH") {
         if (t.author !== me.id) throw new HttpError(403, "forbidden");
+        const b = await this.body(req);
+        const text = str(b.text, 2e4);
+        if (!text && !JSON.parse(t.imgs || "[]").length) throw bad("empty");
+        this.run("UPDATE threads SET body=?, edited=? WHERE id=?", text, Date.now(), t.id);
+        return json({ ok: true });
+      }
+      if (M === "DELETE") {
+        // 自分の投稿と、自分が作った部屋の投稿は消せる
+        if (t.author !== me.id && this.one("SELECT owner FROM groups WHERE id=?", t.gid)?.owner !== me.id) throw new HttpError(403, "forbidden");
         this.run("DELETE FROM reactions WHERE tgt IN (SELECT id FROM comments WHERE tid=?) OR tgt=?", t.id, t.id);
         this.run("DELETE FROM comments WHERE tid=?", t.id);
         this.run("DELETE FROM threads WHERE id=?", t.id);
@@ -512,12 +599,73 @@ export class Hub extends DurableObject {
       this.run("UPDATE groups SET last=?, last_text=? WHERE id=?", now, (text || (stamp && !imgs.length ? "スタンプ" : "写真")).slice(0, 60), t.gid);
       return json({ id });
     }
-    if ((m = path.match(/^\/api\/comments\/([a-f0-9]{20})$/)) && M === "DELETE") {
+    if ((m = path.match(/^\/api\/comments\/([a-f0-9]{20})$/)) && (M === "DELETE" || M === "PATCH")) {
       const c = this.one("SELECT * FROM comments WHERE id=?", m[1]);
-      if (!c || c.author !== me.id) throw new HttpError(404, "not_found");
+      const ct = c && this.one("SELECT t.gid gid, g.owner owner FROM threads t JOIN groups g ON g.id=t.gid WHERE t.id=?", c.tid);
+      if (!c || !ct || !this.member(ct.gid, me.id)) throw new HttpError(404, "not_found");
+      if (M === "PATCH") {
+        if (c.author !== me.id) throw new HttpError(403, "forbidden");
+        const b = await this.body(req);
+        const text = str(b.text, 2e4);
+        if (!text && !JSON.parse(c.imgs || "[]").length && !c.stamp) throw bad("empty");
+        this.run("UPDATE comments SET body=?, edited=? WHERE id=?", text, Date.now(), c.id);
+        return json({ ok: true });
+      }
+      if (c.author !== me.id && ct.owner !== me.id) throw new HttpError(403, "forbidden");
       this.run("DELETE FROM comments WHERE id=?", c.id);
       this.run("DELETE FROM reactions WHERE tgt=?", c.id);
       this.run("UPDATE threads SET ccount=MAX(0,ccount-1) WHERE id=?", c.tid);
+      return json({ ok: true });
+    }
+
+    // ---- DM（友達とのメッセージ） ----
+    if (path === "/api/dms" && M === "GET") {
+      const rows = this.q("SELECT * FROM friends WHERE (a=? OR b=?) AND status='accepted'", me.id, me.id);
+      const convs = [];
+      for (const r of rows) {
+        const peer = r.a === me.id ? r.b : r.a;
+        const pk = pair(me.id, peer).join(":");
+        const last = this.one("SELECT * FROM dms WHERE pk=? ORDER BY ts DESC LIMIT 1", pk);
+        if (!last) continue;
+        const rd = this.one("SELECT ts FROM dm_reads WHERE uid=? AND peer=?", me.id, peer);
+        const unread = this.one("SELECT COUNT(*) c FROM dms WHERE pk=? AND author!=? AND ts>?", pk, me.id, rd ? rd.ts : 0).c;
+        convs.push({ peer, unread, last: { text: last.body, stamp: !!last.stamp && !last.body, photo: !!JSON.parse(last.imgs || "[]").length && !last.body, mine: last.author === me.id, ts: last.ts } });
+      }
+      convs.sort((x, y) => y.last.ts - x.last.ts);
+      return json({ convs, unread: convs.reduce((n, c) => n + c.unread, 0), users: this.users(convs.map((c) => c.peer)) });
+    }
+    if ((m = path.match(/^\/api\/dms\/([a-f0-9]{20})$/))) {
+      const peer = m[1];
+      if (!this.isFriend(me.id, peer)) throw new HttpError(404, "not_found");
+      const pk = pair(me.id, peer).join(":");
+      if (M === "GET") {
+        const rows = this.q("SELECT * FROM (SELECT * FROM dms WHERE pk=? ORDER BY ts DESC LIMIT 200) ORDER BY ts", pk);
+        const rx = this.reactsFor(rows.map((x) => x.id), me.id);
+        this.run("INSERT OR REPLACE INTO dm_reads(uid,peer,ts) VALUES(?,?,?)", me.id, peer, Date.now());
+        const messages = rows.map((x) => ({ id: x.id, author: x.author, text: x.body, images: JSON.parse(x.imgs || "[]"), stamp: x.stamp || null, ts: x.ts, reacts: rx[x.id] || [] }));
+        return json({
+          messages, peer, users: this.users([peer, me.id]),
+          stamps: this.stampMap([...Object.values(rx).flat().map((r) => r.s), ...messages.map((x) => x.stamp)]),
+        });
+      }
+      if (M === "POST") {
+        const b = await this.body(req);
+        this.rate("d:" + me.id, 600, 36e5);
+        const text = str(b.text, 2e4);
+        const imgs = this.ownImgs(b.images, me.id);
+        const stamp = b.stamp ? String(b.stamp) : null;
+        if (stamp && !this.stampOk(stamp)) throw bad("stamp");
+        if (!text && !imgs.length && !stamp) throw bad("empty");
+        const id = rid(10);
+        this.run("INSERT INTO dms(id,pk,author,body,imgs,stamp,ts) VALUES(?,?,?,?,?,?,?)", id, pk, me.id, text, JSON.stringify(imgs), stamp, Date.now());
+        return json({ id });
+      }
+    }
+    if ((m = path.match(/^\/api\/dmsg\/([a-f0-9]{20})$/)) && M === "DELETE") {
+      const d = this.one("SELECT * FROM dms WHERE id=?", m[1]);
+      if (!d || d.author !== me.id) throw new HttpError(404, "not_found");
+      this.run("DELETE FROM reactions WHERE tgt=?", d.id);
+      this.run("DELETE FROM dms WHERE id=?", d.id);
       return json({ ok: true });
     }
 
@@ -528,7 +676,7 @@ export class Hub extends DurableObject {
     }
     if (path === "/api/stamps" && M === "POST") {
       const b = await this.body(req);
-      return json({ stamp: this.addStamp(me.id, cleanSpec(b.spec)) });
+      return json({ stamp: this.addStamp(me.id, this.stampSpec(me.id, b.spec)) });
     }
     if ((m = path.match(/^\/api\/stamps\/([a-f0-9]{20})$/))) {
       const st = this.one("SELECT * FROM stamps WHERE id=?", m[1]);
@@ -539,7 +687,7 @@ export class Hub extends DurableObject {
       if (!st || st.owner !== me.id) throw new HttpError(404, "not_found");
       if (M === "PUT") {
         const b = await this.body(req);
-        const spec = cleanSpec(b.spec);
+        const spec = this.stampSpec(me.id, b.spec);
         this.run("UPDATE stamps SET spec=? WHERE id=?", JSON.stringify(spec), st.id);
         return json({ stamp: { id: st.id, spec } });
       }
@@ -552,7 +700,7 @@ export class Hub extends DurableObject {
     if ((m = path.match(/^\/api\/stamps\/([a-f0-9]{20})\/copy$/)) && M === "POST") {
       const st = this.one("SELECT spec FROM stamps WHERE id=?", m[1]);
       if (!st) throw new HttpError(404, "not_found");
-      return json({ stamp: this.addStamp(me.id, cleanSpec(JSON.parse(st.spec))) });
+      return json({ stamp: this.addStamp(me.id, this.stampSpec(me.id, JSON.parse(st.spec), true)) });
     }
 
     // ---- リアクション（同じスタンプをもう一度押すと外れる） ----
@@ -561,13 +709,18 @@ export class Hub extends DurableObject {
       const tgt = str(b.tgt, 20);
       let gid = null;
       const t = this.one("SELECT gid FROM threads WHERE id=?", tgt);
+      let allowed = false;
       if (t) gid = t.gid;
       else {
         const c = this.one("SELECT tid FROM comments WHERE id=?", tgt);
         const t2 = c && this.one("SELECT gid FROM threads WHERE id=?", c.tid);
         if (t2) gid = t2.gid;
+        else {
+          const d = this.one("SELECT pk FROM dms WHERE id=?", tgt);
+          if (d && d.pk.split(":").includes(me.id)) allowed = true;
+        }
       }
-      if (!gid || !this.member(gid, me.id)) throw new HttpError(404, "not_found");
+      if (!allowed && (!gid || !this.member(gid, me.id))) throw new HttpError(404, "not_found");
       const stamp = String(b.stamp || "");
       if (!this.stampOk(stamp)) throw bad("stamp");
       this.rate("x:" + me.id, 300, 36e5);
@@ -634,7 +787,7 @@ export class Hub extends DurableObject {
     // 最初から自分だけの部屋（メモ帳がわり）を1つ用意する
     this.createGroup("ひとりごと", id, []);
     const cookie = await this.startSession(id);
-    return json({ me: pub(this.one("SELECT id,handle,name,color,avatar FROM users WHERE id=?", id)) }, 200, { "set-cookie": cookie });
+    return json({ me: pub(this.one("SELECT id,handle,name,color,avatar,bio FROM users WHERE id=?", id)) }, 200, { "set-cookie": cookie });
   }
 
   async login(req) {

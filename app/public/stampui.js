@@ -6,14 +6,14 @@ function ui(){ return window.DARAUI; }
 function h(){ return ui().h.apply(null, arguments); }
 
 /* ---- 小さな部品 ---- */
-function chip(label, on, fn){
-  return h('button', {type:'button', class:'chip' + (on ? ' on' : ''), 'aria-pressed':on ? 'true' : 'false', text:label, onclick:fn});
+function chip(label, on, fn, style){
+  return h('button', {type:'button', class:'chip' + (on ? ' on' : ''), 'aria-pressed':on ? 'true' : 'false', text:label, style:style || null, onclick:fn});
 }
 function pick(el, on, label, fn){
   return h('button', {type:'button', class:'pk' + (on ? ' on' : ''), 'aria-pressed':on ? 'true' : 'false', 'aria-label':label, onclick:fn}, el);
 }
 // 色えらび：12色 + 自由な色
-function swatchRow(value, onChange, extra){
+function swatchRow(value, onChange){
   var row = h('div', {class:'swrow'});
   S.PAL.forEach(function(p, i){
     row.appendChild(h('button', {type:'button', class:'sw' + (value === i ? ' on' : ''), 'aria-label':'色 ' + (i + 1), 'aria-pressed':value === i ? 'true' : 'false',
@@ -23,48 +23,115 @@ function swatchRow(value, onChange, extra){
   var inp = h('input', {type:'color', value:isHex ? value : '#9db8ff', 'aria-label':'好きな色'});
   inp.addEventListener('input', function(){ onChange(inp.value); });
   row.appendChild(h('label', {class:'sw custom' + (isHex ? ' on' : ''), 'aria-label':'好きな色', style:isHex ? 'background:' + value : ''}, inp));
-  if(extra) row.appendChild(extra);
   return row;
 }
 function sec(title){ return h('div', {class:'lbl', text:title}); }
+function fontChips(cur, onPick){
+  var box = h('div', {class:'chips fonts'});
+  S.FONTS.forEach(function(f, i){
+    box.appendChild(h('button', {type:'button', class:'chip fchip' + (cur === i ? ' on' : ''), 'aria-pressed':cur === i ? 'true' : 'false', 'aria-label':f.n + 'の書体',
+      style:S.fontStyle(i), onclick:function(){ onPick(i); }}, 'あア' + f.n));
+  });
+  return box;
+}
+// 写真を選んで、軽くして、アップロードする。id を返す
+function pickPhoto(max, mime){
+  return new Promise(function(resolve){
+    var A = ui();
+    var inp = h('input', {type:'file', accept:'image/*', hidden:true});
+    inp.addEventListener('change', async function(){
+      var f = inp.files[0]; inp.remove();
+      if(!f){ resolve(null); return; }
+      try{
+        var im = await A.shrinkAs(f, max, mime);
+        var id = await A.uploadRaw(im.blob, mime);
+        resolve(id);
+      }catch(e){ A.toast(A.errMsg(e)); resolve(null); }
+    });
+    document.body.appendChild(inp); inp.click();
+  });
+}
 
 /* ---- スタンプのエディタ ---- */
+var TYPES = [['stamp', 'かたち'], ['text', 'もじだけ'], ['photo', '写真']];
+function typeOf(sp){ return sp.img ? 'photo' : (sp.shape === 8 ? 'text' : 'stamp'); }
+
 function openEditor(init, o){
   o = o || {};
   var A = ui();
   var spec = S.clean(init || {shape:Math.floor(Math.random() * 8), color:Math.floor(Math.random() * 12), face:0, ring:1});
+  var type = typeOf(spec);
   var pv = h('div', {class:'pv'});
   var root = h('div', {class:'sted'});
-  var shapeBox = h('div', {class:'strip'}), colorBox = h('div'), faceBox = h('div', {class:'strip'});
-  var textIn = h('input', {class:'field', type:'text', maxlength:'8', placeholder:'ひとこと（8文字まで）', value:spec.text, 'aria-label':'スタンプの文字'});
+  var typeBox = h('div', {class:'chips'});
+  var shapeSec = h('div'), shapeBox = h('div', {class:'strip'});
+  var photoSec = h('div'), photoBox = h('div');
+  var colorSec = h('div'), colorBox = h('div');
+  var faceSec = h('div'), faceBox = h('div', {class:'strip'});
+  var fontBox = h('div');
+  var textIn = h('input', {class:'field', type:'text', maxlength:'12', placeholder:'ひとこと', value:spec.text, 'aria-label':'スタンプの文字'});
   var posBox = h('div', {class:'chips'}), sizeBox = h('div', {class:'chips'}), tcBox = h('div'), decoBox = h('div', {class:'chips'}), miscBox = h('div');
   var close;
 
   function set(k, v){ spec[k] = v; draw(); }
+  function setType(t){
+    type = t;
+    if(t === 'stamp'){ spec.img = ''; if(spec.shape === 8) spec.shape = 0; if(spec.face < 0) spec.face = 0; }
+    if(t === 'text'){ spec.img = ''; spec.shape = 8; spec.face = -1; if(!spec.text) spec.text = 'やばい'; textIn.value = spec.text; }
+    if(t === 'photo'){ spec.face = -1; if(spec.shape === 8 && !spec.img) spec.shape = 0; }
+    draw();
+  }
   function drawPreview(){ pv.innerHTML = ''; pv.appendChild(S.render(spec, 150)); }
   function draw(){
     drawPreview();
+    typeBox.innerHTML = '';
+    TYPES.forEach(function(t){ typeBox.appendChild(chip(t[1], type === t[0], function(){ setType(t[0]); })); });
+    shapeSec.hidden = type === 'text';
     shapeBox.innerHTML = '';
     S.SHAPES.forEach(function(sh, i){
-      shapeBox.appendChild(pick(S.render({shape:i, color:spec.color, face:-1, ring:0}, 46), spec.shape === i, sh.n, function(){ set('shape', i); }));
+      if(i === 8 && type !== 'photo') return;
+      shapeBox.appendChild(pick(S.render({shape:i, color:spec.color, face:-1, ring:0, text:i === 8 ? '枠なし' : '', tsize:0, tpos:1}, 46), spec.shape === i, sh.n, function(){ set('shape', i); }));
     });
+    colorSec.hidden = type === 'photo';
     colorBox.innerHTML = ''; colorBox.appendChild(swatchRow(spec.color, function(v){ set('color', v); }));
+    faceSec.hidden = type !== 'stamp';
     faceBox.innerHTML = '';
     faceBox.appendChild(pick(h('span', {class:'none', text:'なし'}), spec.face === -1, '顔なし', function(){ set('face', -1); }));
     S.FACES.forEach(function(f, i){
       faceBox.appendChild(pick(S.render({shape:0, color:spec.color, face:i, ring:0}, 46), spec.face === i, f.n, function(){ set('face', i); }));
     });
+    // 写真
+    photoSec.hidden = type !== 'photo';
+    photoBox.innerHTML = '';
+    photoBox.appendChild(h('button', {type:'button', class:'b3 soft sm', text:spec.img ? '別の写真にする' : '写真をえらぶ', onclick:async function(){
+      var id = await pickPhoto(384, 'image/png'); if(id){ spec.img = id; draw(); }
+    }}));
+    if(spec.img){
+      var z = h('input', {type:'range', min:'100', max:'300', step:'5', value:String(spec.iz), 'aria-label':'大きさ'});
+      var x = h('input', {type:'range', min:'-50', max:'50', step:'1', value:String(spec.ix), 'aria-label':'よこの位置'});
+      var y = h('input', {type:'range', min:'-50', max:'50', step:'1', value:String(spec.iy), 'aria-label':'たての位置'});
+      z.addEventListener('input', function(){ spec.iz = +z.value; drawPreview(); });
+      x.addEventListener('input', function(){ spec.ix = +x.value; drawPreview(); });
+      y.addEventListener('input', function(){ spec.iy = +y.value; drawPreview(); });
+      photoBox.appendChild(h('div', {class:'rotrow'}, h('span', {class:'hint', text:'大きさ'}), z));
+      photoBox.appendChild(h('div', {class:'rotrow'}, h('span', {class:'hint', text:'よこ'}), x));
+      photoBox.appendChild(h('div', {class:'rotrow'}, h('span', {class:'hint', text:'たて'}), y));
+    }else photoBox.appendChild(h('div', {class:'hint', text:'好きな写真を、スタンプにできます 文字も重ねられます'}));
+    // 文字
+    textIn.maxLength = type === 'text' ? 12 : 8;
+    fontBox.innerHTML = ''; fontBox.appendChild(fontChips(spec.font, function(i){ set('font', i); }));
     posBox.innerHTML = ''; ['上', 'まんなか', '下'].forEach(function(t, i){ var v = [2, 1, 0][i]; posBox.appendChild(chip(t, spec.tpos === v, function(){ set('tpos', v); })); });
     sizeBox.innerHTML = ''; ['小', '中', '大'].forEach(function(t, i){ sizeBox.appendChild(chip(t, spec.tsize === i, function(){ set('tsize', i); })); });
     tcBox.innerHTML = '';
     var tr = h('div', {class:'swrow'});
     tr.appendChild(chip('自動', !spec.tcolor, function(){ set('tcolor', ''); }));
-    ['#ffffff', '#17131f', '#ff4d79', '#3b82ff', '#ffb000'].forEach(function(c){
+    var fixed = ['#ffffff', '#17131f', '#ff4d79', '#3b82ff', '#ffb000'];
+    fixed.forEach(function(c){
       tr.appendChild(h('button', {type:'button', class:'sw small' + (spec.tcolor === c ? ' on' : ''), 'aria-label':'文字の色', style:'background:' + c, onclick:function(){ set('tcolor', c); }}));
     });
     var ti = h('input', {type:'color', value:spec.tcolor || '#ffffff', 'aria-label':'文字の色を選ぶ'});
     ti.addEventListener('input', function(){ set('tcolor', ti.value); });
-    tr.appendChild(h('label', {class:'sw small custom' + (spec.tcolor && ['#ffffff', '#17131f', '#ff4d79', '#3b82ff', '#ffb000'].indexOf(spec.tcolor) < 0 ? ' on' : ''), 'aria-label':'文字の色を選ぶ'}, ti));
+    tr.appendChild(h('label', {class:'sw small custom' + (spec.tcolor && fixed.indexOf(spec.tcolor) < 0 ? ' on' : ''), 'aria-label':'文字の色を選ぶ'}, ti));
     tcBox.appendChild(tr);
     decoBox.innerHTML = ''; S.DECOS.forEach(function(t, i){ decoBox.appendChild(chip(t, spec.deco === i, function(){ set('deco', i); })); });
     miscBox.innerHTML = '';
@@ -72,10 +139,12 @@ function openEditor(init, o){
     rot.addEventListener('input', function(){ spec.rot = +rot.value; drawPreview(); });
     miscBox.appendChild(h('div', {class:'rotrow'}, h('span', {class:'hint', text:'かたむき'}), rot, chip('ふちどり', !!spec.ring, function(){ set('ring', spec.ring ? 0 : 1); })));
   }
-  textIn.addEventListener('input', function(){ spec.text = textIn.value.slice(0, 8); drawPreview(); });
+  textIn.addEventListener('input', function(){ spec.text = textIn.value.slice(0, type === 'text' ? 12 : 8); drawPreview(); });
 
   var saveBtn = h('button', {type:'button', class:'b3 block', style:'margin-top:16px', text:o.id ? '保存する' : 'スタンプをつくる'});
   saveBtn.addEventListener('click', async function(){
+    if(type === 'photo' && !spec.img){ A.toast('写真をえらんでください'); return; }
+    if(type === 'text' && !spec.text.trim()){ A.toast('文字を入れてください'); return; }
     saveBtn.disabled = true;
     try{
       var body = {spec:S.clean(spec)};
@@ -86,13 +155,19 @@ function openEditor(init, o){
     }catch(e){ A.toast(A.errMsg(e)); saveBtn.disabled = false; }
   });
   var rnd = h('button', {type:'button', class:'b3 soft sm', text:'おまかせでつくる'});
-  rnd.addEventListener('click', function(){ spec = S.random(spec.text); draw(); });
+  rnd.addEventListener('click', function(){
+    var keep = spec.text, font = Math.floor(Math.random() * S.FONTS.length);
+    spec = S.random(keep); spec.font = font; type = 'stamp'; draw();
+  });
 
   root.appendChild(h('div', {class:'pvwrap'}, pv, rnd));
-  root.appendChild(sec('かたち')); root.appendChild(shapeBox);
-  root.appendChild(sec('いろ')); root.appendChild(colorBox);
-  root.appendChild(sec('かお')); root.appendChild(faceBox);
+  root.appendChild(sec('タイプ')); root.appendChild(typeBox);
+  shapeSec.appendChild(sec('かたち')); shapeSec.appendChild(shapeBox); root.appendChild(shapeSec);
+  photoSec.appendChild(sec('写真')); photoSec.appendChild(photoBox); root.appendChild(photoSec);
+  colorSec.appendChild(sec('いろ')); colorSec.appendChild(colorBox); root.appendChild(colorSec);
+  faceSec.appendChild(sec('かお')); faceSec.appendChild(faceBox); root.appendChild(faceSec);
   root.appendChild(sec('もじ')); root.appendChild(textIn);
+  root.appendChild(h('div', {class:'hint', style:'margin-top:8px', text:'書体'})); root.appendChild(fontBox);
   root.appendChild(h('div', {class:'twocol'}, h('div', null, h('div', {class:'hint', text:'いち'}), posBox), h('div', null, h('div', {class:'hint', text:'おおきさ'}), sizeBox)));
   root.appendChild(h('div', {class:'hint', style:'margin-top:8px', text:'もじの色'})); root.appendChild(tcBox);
   root.appendChild(sec('かざり')); root.appendChild(decoBox);
@@ -129,7 +204,7 @@ function openPicker(onPick, opts){
     return h('div', {class:'pwrap'}, b, extra);
   }
   function grid(items){ var g = h('div', {class:'pgrid'}); items.forEach(function(i){ g.appendChild(i); }); return g; }
-  close = A.openSheet('スタンプをえらぶ', box);
+  close = A.openSheet(opts.title || 'スタンプをえらぶ', box);
   function draw(mine){
     box.innerHTML = '';
     var cache = A.stampCache();
@@ -144,7 +219,6 @@ function openPicker(onPick, opts){
     else box.appendChild(grid(mine.map(function(s){ return cell(s.id, s.spec); })));
     box.appendChild(sec('いろいろ'));
     box.appendChild(grid(S.BUILTIN_IDS.map(function(id){ return cell(id, S.resolve(id)); })));
-    // この画面で使われているほかの人のスタンプ
     var own = {}; (mine || []).forEach(function(s){ own[s.id] = 1; });
     var others = Object.keys(cache).filter(function(id){ return !own[id] && id.indexOf('b:') !== 0; });
     if(others.length){
@@ -153,7 +227,7 @@ function openPicker(onPick, opts){
       box.appendChild(grid(others.slice(0, 30).map(function(id){
         return cell(id, cache[id], h('button', {type:'button', class:'pcopy', 'aria-label':'自分のスタンプに入れる', text:'＋', onclick:async function(e){
           e.stopPropagation();
-          try{ var r = await A.api('/api/stamps/' + id + '/copy', {body:{}}); A.toast('自分のスタンプに入れました'); A.api('/api/stamps').then(function(x){ draw(x.stamps); }); }
+          try{ await A.api('/api/stamps/' + id + '/copy', {body:{}}); A.toast('自分のスタンプに入れました'); A.api('/api/stamps').then(function(x){ draw(x.stamps); }); }
           catch(x){ A.toast(A.errMsg(x)); }
         }}));
       })));
@@ -168,17 +242,23 @@ function oneMap(st){ var m = {}; m[st.id] = st.spec; return m; }
 var PATTERNS = ['なし', 'みずたま', 'しましま', 'きらきら', 'チェック'];
 function openRoomStyle(group, onSaved){
   var A = ui();
-  var cur = {name:group.name, color:group.color, ccolor:group.ccolor || null, face:group.face || 0, shape:group.shape || 0, pattern:group.pattern || 0, desc:group.desc || ''};
+  var cur = {name:group.name, color:group.color, ccolor:group.ccolor || null, face:group.face || 0, shape:(group.shape || 0) % S.CHAR_SHAPES, pattern:group.pattern || 0,
+    desc:group.desc || '', tfont:group.tfont || 0, banner:group.banner || null, decos:(group.decos || []).slice(0, 4)};
   var pv = h('div', {class:'rpv'}), colorBox = h('div'), shapeBox = h('div', {class:'strip'}), faceBox = h('div', {class:'strip'}), patBox = h('div', {class:'chips'});
+  var fontBox = h('div'), bannerBox = h('div'), decoBox = h('div', {class:'decoslots'});
   var nameIn = h('input', {class:'field', type:'text', maxlength:'30', value:cur.name, 'aria-label':'部屋の名前'});
   var descIn = h('input', {class:'field', type:'text', maxlength:'60', value:cur.desc, placeholder:'この部屋のひとこと', 'aria-label':'この部屋のひとこと'});
   var close;
   function val(){ return cur.ccolor || cur.color; }
   function drawPreview(){
     pv.innerHTML = '';
-    var dark = S.roomDark(cur);
-    var card = h('div', {class:'rpv-card pt' + cur.pattern + (dark ? ' dk' : ''), style:S.roomVars(cur)},
-      h('div', {class:'rpv-text'}, h('b', {text:nameIn.value || '部屋の名前'}), h('small', {text:descIn.value})), S.roomChar(cur, 64, true));
+    var dark = S.roomDark(cur) || !!cur.banner;
+    var st = S.roomVars(cur) + (cur.banner ? ';--bimg:url(/api/images/' + cur.banner + ')' : '');
+    var decos = h('div', {class:'decos', 'aria-hidden':'true'});
+    cur.decos.forEach(function(id){ var sp = S.resolve(id, A.stampCache()); if(sp) decos.appendChild(S.render(sp, 34)); });
+    var title = h('b', {text:nameIn.value || '部屋の名前', style:S.fontStyle(cur.tfont)});
+    var card = h('div', {class:'rpv-card pt' + cur.pattern + (dark ? ' dk' : '') + (cur.banner ? ' hasimg' : ''), style:st},
+      h('div', {class:'rpv-text'}, title, h('small', {text:descIn.value})), S.roomChar(cur, 64, true), decos);
     pv.appendChild(card);
   }
   function draw(){
@@ -186,11 +266,35 @@ function openRoomStyle(group, onSaved){
     colorBox.innerHTML = '';
     colorBox.appendChild(swatchRow(val(), function(v){ if(S.hexOk(v)){ cur.ccolor = v; } else { cur.color = v; cur.ccolor = null; } draw(); }));
     shapeBox.innerHTML = '';
-    S.SHAPES.forEach(function(sh, i){ shapeBox.appendChild(pick(S.roomChar({shape:i, color:cur.color, ccolor:cur.ccolor, face:-1}, 46), cur.shape === i, sh.n, function(){ cur.shape = i; draw(); })); });
+    for(var i = 0; i < S.CHAR_SHAPES; i++) (function(i){
+      shapeBox.appendChild(pick(S.roomChar({shape:i, color:cur.color, ccolor:cur.ccolor, face:-1}, 46), cur.shape === i, S.SHAPES[i].n, function(){ cur.shape = i; draw(); }));
+    })(i);
     faceBox.innerHTML = '';
-    S.FACES.forEach(function(f, i){ faceBox.appendChild(pick(S.roomChar({shape:0, color:cur.color, ccolor:cur.ccolor, face:i}, 46), cur.face === i, f.n, function(){ cur.face = i; draw(); })); });
+    S.FACES.forEach(function(f, i){ faceBox.appendChild(pick(S.roomChar({shape:cur.shape, color:cur.color, ccolor:cur.ccolor, face:i}, 46), cur.face === i, f.n, function(){ cur.face = i; draw(); })); });
     patBox.innerHTML = '';
     PATTERNS.forEach(function(t, i){ patBox.appendChild(chip(t, cur.pattern === i, function(){ cur.pattern = i; draw(); })); });
+    fontBox.innerHTML = ''; fontBox.appendChild(fontChips(cur.tfont, function(i){ cur.tfont = i; draw(); }));
+    bannerBox.innerHTML = '';
+    bannerBox.appendChild(h('div', {class:'btnrow'},
+      h('button', {type:'button', class:'b3 soft sm', text:cur.banner ? '写真を変える' : '写真をえらぶ', onclick:async function(){
+        var id = await pickPhoto(1000, 'image/jpeg'); if(id){ cur.banner = id; draw(); }
+      }}),
+      cur.banner ? h('button', {type:'button', class:'b3 soft sm', text:'はずす', onclick:function(){ cur.banner = null; draw(); }}) : null));
+    decoBox.innerHTML = '';
+    for(var k = 0; k < 4; k++) (function(k){
+      var id = cur.decos[k];
+      var sp = id && S.resolve(id, A.stampCache());
+      var slot = h('div', {class:'dslot'});
+      var btn = h('button', {type:'button', class:'dbtn' + (sp ? '' : ' empty'), 'aria-label':'デコのスタンプ ' + (k + 1), onclick:function(){
+        openPicker(function(sid, spec){
+          if(spec){ var m = {}; m[sid] = spec; A.cacheStamps(m); }
+          cur.decos[k] = sid; cur.decos = cur.decos.filter(Boolean); draw();
+        }, {title:'デコにするスタンプ'});
+      }}, sp ? S.render(sp, 48) : h('span', {text:'＋'}));
+      slot.appendChild(btn);
+      if(sp) slot.appendChild(h('button', {type:'button', class:'dx', 'aria-label':'はずす', text:'×', onclick:function(){ cur.decos.splice(k, 1); draw(); }}));
+      decoBox.appendChild(slot);
+    })(k);
   }
   nameIn.addEventListener('input', drawPreview); descIn.addEventListener('input', drawPreview);
   var save = h('button', {type:'button', class:'b3 block', style:'margin-top:16px', text:'保存する'});
@@ -199,12 +303,14 @@ function openRoomStyle(group, onSaved){
     if(!name){ A.toast('部屋の名前を入れてください'); return; }
     save.disabled = true;
     try{
-      await A.api('/api/groups/' + group.id + '/style', {body:{name:name, color:cur.color, ccolor:cur.ccolor, face:cur.face, shape:cur.shape, pattern:cur.pattern, desc:descIn.value.trim()}});
+      await A.api('/api/groups/' + group.id + '/style', {body:{name:name, color:cur.color, ccolor:cur.ccolor, face:cur.face, shape:cur.shape, pattern:cur.pattern,
+        desc:descIn.value.trim(), tfont:cur.tfont, banner:cur.banner, decos:cur.decos}});
       A.toast('部屋の見た目を変えました'); close(); if(onSaved) onSaved();
     }catch(e){ A.toast(A.errMsg(e)); save.disabled = false; }
   });
-  var root = h('div', {class:'sted'}, pv, sec('なまえ'), nameIn, sec('ひとこと'), descIn, sec('いろ'), colorBox, sec('キャラクターのかたち'), shapeBox,
-    sec('かお'), faceBox, sec('はいけいの模様'), patBox, save);
+  var root = h('div', {class:'sted'}, pv, sec('なまえ'), nameIn, sec('ひとこと'), descIn, sec('いろ'), colorBox, sec('はいけいの写真'), bannerBox,
+    sec('はいけいの模様'), patBox, sec('タイトルの書体'), fontBox, sec('かざりのスタンプ（4つまで）'), decoBox,
+    sec('キャラクターのかたち'), shapeBox, sec('キャラクターのかお'), faceBox, save);
   close = A.openSheet('部屋をカスタマイズ', root);
   draw();
 }

@@ -53,8 +53,23 @@ var SHAPES = [
   {n:'ぷに', parts:[{t:'path', d:'M46 8C70 4 94 22 91 48C94 70 76 94 50 91C26 96 6 76 9 50C4 28 24 12 46 8Z'}],
     face:{x:50, y:46, s:1}, text:{top:22, mid:53, bot:81, w:70}},
   {n:'ひしがた', parts:[{t:'path', d:'M50 10L90 50L50 90L10 50Z', round:10}],
-    face:{x:50, y:50, s:0.66}, text:{top:32, mid:54, bot:72, w:46}}
+    face:{x:50, y:50, s:0.66}, text:{top:32, mid:54, bot:72, w:46}},
+  // 形なし：文字だけのスタンプ／写真をそのまま四角で使うとき
+  {n:'なし', parts:[], textOnly:true, face:{x:50, y:50, s:1}, text:{top:26, mid:50, bot:74, w:92}}
 ];
+var CHAR_SHAPES = 8;   // 部屋のキャラクターに使える形の数（「なし」は除く）
+var PHOTO_RECT = [{t:'rect', x:6, y:6, w:88, h:88, r:16}];
+
+/* ---- 文字の書体（Google Fonts） ---- */
+var FONTS = [
+  {n:'まる', f:"'Zen Maru Gothic'", w:900}, {n:'ふとい', f:"'Dela Gothic One'", w:400},
+  {n:'ぽっぷ', f:"'Mochiy Pop One'", w:400}, {n:'てがき', f:"'Yusei Magic'", w:400},
+  {n:'ロック', f:"'RocknRoll One'", w:400}, {n:'レゲエ', f:"'Reggae One'", w:400},
+  {n:'ドット', f:"'DotGothic16'", w:400}, {n:'はちまる', f:"'Hachi Maru Pop'", w:400},
+  {n:'ゆるい', f:"'Yomogi'", w:400}, {n:'ふで', f:"'Potta One'", w:400}
+];
+var FALLBACK = ",'Hiragino Maru Gothic ProN','Hiragino Sans','Yu Gothic',system-ui,sans-serif";
+function fontStyle(i){ var f = FONTS[i] || FONTS[0]; return 'font-family:' + f.f + FALLBACK + ';font-weight:' + f.w; }
 
 /* ---- 顔（中心 0,0 の座標。幅は約 100） ---- */
 function arc(d){ return '<path d="' + d + '" fill="none" stroke="' + INK + '" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>'; }
@@ -86,7 +101,10 @@ function clean(s){
   var color = hexOk(s.color) ? s.color.toLowerCase() : int(s.color, 0, PAL.length - 1, 0);
   return {
     v:1, shape:int(s.shape, 0, SHAPES.length - 1, 0), color:color, face:int(s.face, -1, FACES.length - 1, 0),
-    text:String(s.text || '').replace(/[\r\n]/g, ' ').slice(0, 8), tcolor:hexOk(s.tcolor) ? s.tcolor.toLowerCase() : '',
+    text:String(s.text || '').replace(/[\r\n]/g, ' ').slice(0, 12), font:int(s.font, 0, FONTS.length - 1, 0),
+    img:typeof s.img === 'string' && /^[a-f0-9]{24}$/.test(s.img) ? s.img : '',
+    iz:int(s.iz, 100, 300, 100), ix:int(s.ix, -50, 50, 0), iy:int(s.iy, -50, 50, 0),
+    tcolor:hexOk(s.tcolor) ? s.tcolor.toLowerCase() : '',
     tsize:int(s.tsize, 0, 2, 1), tpos:int(s.tpos, 0, 2, 0), deco:int(s.deco, 0, DECOS.length - 1, 0),
     rot:int(s.rot, -20, 20, 0), ring:int(s.ring, 0, 1, 0)
   };
@@ -108,36 +126,65 @@ function partsStr(parts, attrs, grow){
   }).join('');
 }
 
+function splitLines(t){
+  var a = Array.from(t);
+  if(a.length <= 6) return [t];
+  var k = Math.ceil(a.length / 2);
+  return [a.slice(0, k).join(''), a.slice(k).join('')];
+}
+
 function svgString(spec, size){
   var s = clean(spec), sh = SHAPES[s.shape], pal = palOf(s.color), n = ++uid;
   var g = 'url(#g' + n + ')';
+  var hasImg = !!s.img;
+  var parts = sh.parts.length ? sh.parts : (hasImg ? PHOTO_RECT : []);
+  var f = sh.face;
   var out = '<svg viewBox="0 0 100 100" width="' + size + '" height="' + size + '" aria-hidden="true" focusable="false">';
   out += '<defs><radialGradient id="g' + n + '" gradientUnits="userSpaceOnUse" cx="38" cy="30" r="84">'
     + '<stop offset="0" stop-color="' + pal.l + '"/><stop offset=".55" stop-color="' + pal.c + '"/><stop offset="1" stop-color="' + pal.d + '"/></radialGradient>'
     + '<radialGradient id="h' + n + '"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>'
-    + '<clipPath id="c' + n + '">' + partsStr(sh.parts, '') + '</clipPath></defs>';
+    + '<clipPath id="c' + n + '">' + partsStr(parts, '') + '</clipPath></defs>';
   out += '<g transform="rotate(' + s.rot + ' 50 50)">';
-  if(s.ring) out += '<g fill="#fff" stroke="#fff" stroke-width="7" stroke-linejoin="round">' + partsStr(sh.parts, '', 7 + 0) + '</g>';
-  out += '<g fill="' + g + '" stroke="' + g + '" stroke-width="0">' + partsStr(sh.parts, '') + '</g>';
-  out += '<g clip-path="url(#c' + n + ')"><ellipse cx="34" cy="22" rx="18" ry="9" fill="url(#h' + n + ')" transform="rotate(-18 34 22)"/></g>';
-  var f = sh.face;
-  if(s.face >= 0){
+  if(s.ring && parts.length) out += '<g fill="#fff" stroke="#fff" stroke-width="7" stroke-linejoin="round">' + partsStr(parts, '', 7) + '</g>';
+  if(parts.length) out += '<g fill="' + g + '" stroke="' + g + '" stroke-width="0">' + partsStr(parts, '') + '</g>';
+  if(hasImg){
+    var z = s.iz / 100, sz = 100 * z;
+    out += '<g clip-path="url(#c' + n + ')"><image href="/api/images/' + s.img + '" x="' + (50 - sz / 2 + s.ix) + '" y="' + (50 - sz / 2 + s.iy)
+      + '" width="' + sz + '" height="' + sz + '" preserveAspectRatio="xMidYMid slice"/></g>';
+  }else if(parts.length){
+    out += '<g clip-path="url(#c' + n + ')"><ellipse cx="34" cy="22" rx="18" ry="9" fill="url(#h' + n + ')" transform="rotate(-18 34 22)"/></g>';
+  }
+  if(s.face >= 0 && !sh.textOnly && !hasImg){
     out += '<g transform="translate(' + f.x + ' ' + f.y + ') scale(' + f.s + ')" fill="' + INK + '">' + FACES[s.face].g + '</g>';
   }
-  if(s.deco === 1) out += '<ellipse cx="' + (f.x - 27 * f.s) + '" cy="' + (f.y + 7 * f.s) + '" rx="' + 7 * f.s + '" ry="' + 4.5 * f.s + '" fill="#ff7aa5" opacity=".55"/>'
+  if(s.deco === 1 && !sh.textOnly && !hasImg) out += '<ellipse cx="' + (f.x - 27 * f.s) + '" cy="' + (f.y + 7 * f.s) + '" rx="' + 7 * f.s + '" ry="' + 4.5 * f.s + '" fill="#ff7aa5" opacity=".55"/>'
     + '<ellipse cx="' + (f.x + 27 * f.s) + '" cy="' + (f.y + 7 * f.s) + '" rx="' + 7 * f.s + '" ry="' + 4.5 * f.s + '" fill="#ff7aa5" opacity=".55"/>';
   if(s.deco === 2) out += spark(84, 16, 1.1) + spark(14, 26, 0.8) + spark(90, 62, 0.7);
   if(s.deco === 3) out += '<path transform="translate(80 26)" d="M0 -9C6 0 7 4 0 8C-7 4 -6 0 0 -9Z" fill="#8fdcff" stroke="#fff" stroke-width="1.6"/>';
   if(s.deco === 4) out += '<path transform="translate(83 20) scale(.8)" d="' + HEART_S + '" fill="#ff4d79" stroke="#fff" stroke-width="1.6"/>'
     + '<path transform="translate(16 30) scale(.55)" d="' + HEART_S + '" fill="#ff4d79" stroke="#fff" stroke-width="2"/>';
   if(s.text){
-    var fs = [13, 18, 26][s.tsize], ty = [sh.text.bot, sh.text.mid, sh.text.top][s.tpos];
-    var tc = s.tcolor || (isDark(s.color) ? '#ffffff' : INK);
-    var halo = lum(tc) > 0.5 ? 'rgba(20,14,30,.7)' : 'rgba(255,255,255,.9)';
-    var maxW = sh.text.w, tl = textWidth(s.text, fs) > maxW ? ' textLength="' + maxW + '" lengthAdjust="spacingAndGlyphs"' : '';
-    out += '<text x="50" y="' + ty + '" text-anchor="middle" dominant-baseline="central" font-size="' + fs + '" font-weight="900" '
-      + 'font-family="\'Zen Maru Gothic\',\'Hiragino Maru Gothic ProN\',\'Hiragino Sans\',\'Yu Gothic\',system-ui,sans-serif" '
-      + 'fill="' + tc + '" stroke="' + halo + '" stroke-width="' + (fs * 0.2).toFixed(1) + '" stroke-linejoin="round" paint-order="stroke"' + tl + '>' + esc(s.text) + '</text>';
+    var big = sh.textOnly && !hasImg;
+    var lines = splitLines(s.text);
+    var fs = (big ? [22, 32, 44] : [13, 18, 26])[s.tsize] * (lines.length > 1 ? (big ? 0.82 : 0.78) : 1);
+    var ty = [sh.text.bot, sh.text.mid, sh.text.top][s.tpos];
+    if(hasImg) ty = [86, 50, 14][s.tpos];
+    var fnt = FONTS[s.font] || FONTS[0];
+    var fam = "font-family=\"" + fnt.f.replace(/'/g, '&#39;') + FALLBACK.replace(/'/g, '&#39;') + "\" font-weight=\"" + fnt.w + "\"";
+    var maxW = hasImg ? 90 : sh.text.w, lh = fs * 1.1;
+    var tc = s.tcolor || (big ? pal.c : (isDark(s.color) ? '#ffffff' : INK));
+    lines.forEach(function(line, li){
+      var y = ty + (li - (lines.length - 1) / 2) * lh;
+      var tl = textWidth(line, fs) > maxW ? ' textLength="' + maxW + '" lengthAdjust="spacingAndGlyphs"' : '';
+      var base = '<text x="50" y="' + y.toFixed(1) + '" text-anchor="middle" dominant-baseline="central" font-size="' + fs.toFixed(1) + '" ' + fam + tl + ' stroke-linejoin="round"';
+      if(big){
+        out += base + ' fill="#fff" stroke="#fff" stroke-width="' + (fs * 0.42).toFixed(1) + '">' + esc(line) + '</text>';
+        out += base + ' fill="' + tc + '" stroke="' + mix(tc, '#000000', 0.5) + '" stroke-width="' + (fs * 0.07).toFixed(1) + '" paint-order="stroke">' + esc(line) + '</text>';
+      }else{
+        var halo = lum(tc) > 0.5 ? 'rgba(20,14,30,.72)' : 'rgba(255,255,255,.92)';
+        out += base + ' fill="' + tc + '" stroke="' + halo + '" stroke-width="' + (fs * 0.22).toFixed(1) + '" paint-order="stroke">' + esc(line) + '</text>';
+      }
+    });
   }
   out += '</g></svg>';
   return out;
@@ -152,7 +199,7 @@ function render(spec, size){
 }
 // 部屋のキャラクター（形・色・顔だけ）
 function roomChar(g, size, bob){
-  var el = render({shape:g.shape || 0, color:g.ccolor || g.color || 0, face:g.face === undefined ? 0 : g.face, deco:0, ring:0}, size);
+  var el = render({shape:(g.shape || 0) % CHAR_SHAPES, color:g.ccolor || g.color || 0, face:g.face === undefined ? 0 : g.face, deco:0, ring:0}, size);
   el.className = 'stamp rchar' + (bob ? ' bob' : '');
   return el;
 }
@@ -194,7 +241,7 @@ function random(keepText){
 }
 
 window.DARAStamp = {
-  PAL:PAL, SHAPES:SHAPES, FACES:FACES, DECOS:DECOS, BUILTIN_IDS:BUILTIN_IDS,
+  PAL:PAL, SHAPES:SHAPES, FACES:FACES, FONTS:FONTS, CHAR_SHAPES:CHAR_SHAPES, fontStyle:fontStyle, DECOS:DECOS, BUILTIN_IDS:BUILTIN_IDS,
   clean:clean, render:render, roomChar:roomChar, roomVars:roomVars, roomDark:roomDark,
   palOf:palOf, isDark:isDark, resolve:resolve, random:random, hexOk:hexOk
 };

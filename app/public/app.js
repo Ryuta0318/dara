@@ -62,6 +62,7 @@ var ERR = {
   handle:'IDは半角の英数字と_で3〜20文字にしてください', password:'パスワードは8文字以上にしてください', name:'名前を入力してください',
   too_many:'試行が多すぎます しばらくしてからお試しください', too_large:'画像が大きすぎます', type:'この画像は使えません', empty:'内容を入力してください',
   limit:'スタンプは100個までです', stamp:'このスタンプは使えませんでした', too_many_reacts:'1つの投稿に押せるスタンプは10個までです',
+  locked:'この部屋の見た目は、オーナーだけが変えられます', owner_only:'オーナーだけができる操作です', forbidden:'この操作はできません',
   no_room:'そのコードの部屋が見つかりません', user:'ユーザーが見つかりません', not_found:'見つかりませんでした'
 };
 function errMsg(e){ return (e && ERR[e.code]) || '通信できませんでした もう一度お試しください'; }
@@ -238,10 +239,11 @@ function lightbox(src){
   overlay.appendChild(lb);
 }
 
-window.DARAUI = {h:h, api:api, toast:toast, openSheet:openSheet, askConfirm:askConfirm, errMsg:errMsg, cacheStamps:cacheStamps, stampCache:function(){ return st.stamps; }};
+window.DARAUI = {shrinkAs:shrinkAs, uploadRaw:uploadRaw, h:h, api:api, toast:toast, openSheet:openSheet, askConfirm:askConfirm, errMsg:errMsg, cacheStamps:cacheStamps, stampCache:function(){ return st.stamps; }};
 
 /* ---------- images ---------- */
-function shrink(file, max, q){
+function shrink(file, max, q, mime){
+  mime = mime || 'image/jpeg';
   return new Promise(function(res, rej){
     var fr = new FileReader();
     fr.onerror = rej;
@@ -253,14 +255,16 @@ function shrink(file, max, q){
         var c = document.createElement('canvas');
         c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
         c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-        var url = c.toDataURL('image/jpeg', q);
-        c.toBlob(function(b){ if(b) res({blob:b, dataUrl:url}); else rej(new Error('blob')); }, 'image/jpeg', q);
+        var url = c.toDataURL(mime, q);
+        c.toBlob(function(b){ if(b) res({blob:b, dataUrl:url}); else rej(new Error('blob')); }, mime, q);
       };
       img.src = fr.result;
     };
     fr.readAsDataURL(file);
   });
 }
+function shrinkAs(file, max, mime){ return shrink(file, max, 0.9, mime); }
+function uploadRaw(blob, type){ return api('/api/images', {raw:blob, type:type}).then(function(r){ return r.id; }); }
 function uploadAll(imgs){
   var ids = [];
   return imgs.reduce(function(p, im){
@@ -336,6 +340,35 @@ function poll(fn, ms){
   return function(){ clearInterval(t); document.removeEventListener('visibilitychange', vis); };
 }
 
+/* ---------- edit / delete posts ---------- */
+function editSheet(kind, id, text, done){
+  var ta = h('textarea', {class:'ta', rows:5, 'aria-label':'本文', style:'width:100%'});
+  ta.value = text;
+  var save = h('button', {type:'button', class:'b3 block', style:'margin-top:12px', text:'保存する'});
+  save.addEventListener('click', async function(){
+    save.disabled = true;
+    try{ await api('/api/' + (kind === 'thread' ? 'threads/' : 'comments/') + id, {method:'PATCH', body:{text:ta.value}}); close(); toast('なおしました'); if(done) done(); }
+    catch(e){ toast(errMsg(e)); save.disabled = false; }
+  });
+  var close = openSheet('なおす', h('div', null, ta, save));
+  setTimeout(function(){ ta.focus(); }, 60);
+}
+// 自分の投稿は編集・削除、部屋のオーナーはほかの人の投稿も削除できる
+function postTools(kind, p, roomOwner, done){
+  var mine = p.author === st.me.id;
+  if(!mine && !roomOwner) return null;
+  var row = h('div', {class:'ptools'});
+  if(mine) row.appendChild(h('button', {type:'button', class:'ghost', text:'編集', onclick:function(e){ e.stopPropagation(); editSheet(kind, p.id, p.text || '', done.edit); }}));
+  row.appendChild(h('button', {type:'button', class:'ghost', text:mine ? '削除' : '削除（オーナー）', onclick:async function(e){
+    e.stopPropagation();
+    var ok = await askConfirm(kind === 'thread' ? 'このスレッドを削除しますか コメントも見られなくなります' : 'このコメントを削除しますか', '削除する');
+    if(!ok) return;
+    try{ await api('/api/' + (kind === 'thread' ? 'threads/' : 'comments/') + p.id, {method:'DELETE', body:{}}); if(done.del) done.del(); }
+    catch(x){ toast(errMsg(x)); }
+  }}));
+  return row;
+}
+
 /* ---------- shared post ---------- */
 function react(tgt, stamp, done){
   api('/api/react', {body:{tgt:tgt, stamp:stamp}}).then(function(r){ cacheStamps(r.stamps); if(done) done(); }).catch(function(e){ toast(errMsg(e)); });
@@ -362,7 +395,7 @@ function reactBar(p, o){
 function postEl(p, o){
   o = o || {};
   var body = h('div', null,
-    h('div', {class:'who'}, h('b', {text:user(p.author).name}), h('span', {class:'ago', text:ago(p.ts)})),
+    h('div', {class:'who'}, h('b', {text:user(p.author).name}), h('span', {class:'ago', text:ago(p.ts)}), p.edited ? h('span', {class:'ago', text:'編集済み'}) : null),
     p.text ? h('div', {class:'ptxt', text:p.text}) : null,
     p.stamp ? h('div', {class:'stampbig'}, stampEl(p.stamp, 104)) : null,
     media(p.images),
@@ -435,12 +468,14 @@ function profileSheet(){
     }catch(e){ toast(errMsg(e)); }
   });
   function oneUser(u){ var m = {}; m[u.id] = u; return m; }
-  var save = h('button', {type:'button', class:'b3 block', style:'margin-top:14px', text:'名前を保存', onclick:async function(){
-    try{ var r = await api('/api/me', {body:{name:nameIn.value}}); st.me = r.me; me = r.me; cacheUsers(oneUser(me)); drawAv(); toast('保存しました'); }catch(e){ toast(errMsg(e)); }
+  var bioIn = h('textarea', {class:'ta', rows:2, maxlength:'80', placeholder:'ひとこと自己紹介', 'aria-label':'自己紹介', style:'width:100%'});
+  bioIn.value = me.bio || '';
+  var save = h('button', {type:'button', class:'b3 block', style:'margin-top:14px', text:'保存する', onclick:async function(){
+    try{ var r = await api('/api/me', {body:{name:nameIn.value, bio:bioIn.value}}); st.me = r.me; me = r.me; cacheUsers(oneUser(me)); drawAv(); toast('保存しました'); }catch(e){ toast(errMsg(e)); }
   }});
   var box = h('div', null, av,
     h('button', {type:'button', class:'b3 soft sm', style:'margin-top:12px', text:'アイコンを選ぶ', onclick:function(){ file.click(); }}), file,
-    h('div', {class:'lbl', text:'表示名'}), nameIn, save,
+    h('div', {class:'lbl', text:'表示名'}), nameIn, h('div', {class:'lbl', text:'自己紹介'}), bioIn, save,
     h('button', {type:'button', class:'b3 soft block', style:'margin-top:14px;color:var(--danger)', text:'ログアウト', onclick:async function(){
       try{ await api('/api/logout', {body:{}}); }catch(e){}
       st.me = null; close(); location.hash = '#/'; render();
@@ -452,7 +487,7 @@ function profileSheet(){
 function homeView(tab){
   var body = h('div');
   var nav = h('nav', {class:'nav', 'aria-label':'メニュー'});
-  var groups = null, fr = null, lastSig = '', friendsUI = null, stampsUI = null, killHero = null;
+  var groups = null, fr = null, dms = null, lastSig = '', friendsUI = null, stampsUI = null, dmUI = null, killHero = null;
 
   var heroBox = tab === 'groups' ? h('div', {class:'hero3d'}) : null;
   if(heroBox) killHero = mountHero(heroBox);
@@ -466,8 +501,10 @@ function homeView(tab){
     var n = fr ? fr.incoming.length : 0;
     var gb = h('a', {href:'#/', class:'b3 tab' + (tab === 'groups' ? ' ink' : ' soft'), text:'グループ', style:'text-decoration:none'});
     var fb = h('a', {href:'#/friends', class:'b3 tab' + (tab === 'friends' ? ' ink' : ' soft'), style:'text-decoration:none'}, '友達', n ? h('span', {class:'dot', text:n}) : null);
+    var dn = dms ? dms.unread : 0;
+    var db = h('a', {href:'#/dm', class:'b3 tab' + (tab === 'dm' ? ' ink' : ' soft'), style:'text-decoration:none'}, 'DM', dn ? h('span', {class:'dot', text:dn}) : null);
     var sb = h('a', {href:'#/stamps', class:'b3 tab' + (tab === 'stamps' ? ' ink' : ' soft'), text:'スタンプ', style:'text-decoration:none'});
-    nav.appendChild(gb); nav.appendChild(fb); nav.appendChild(sb);
+    nav.appendChild(gb); nav.appendChild(fb); nav.appendChild(db); nav.appendChild(sb);
   }
   function drawGroups(){
     body.innerHTML = '';
@@ -479,8 +516,9 @@ function homeView(tab){
     }
     var grid = h('div', {class:'grid'});
     groups.forEach(function(g){
-      var t = h('button', {type:'button', class:'tile' + (S.roomDark(g) ? ' dk' : ''), style:S.roomVars(g), onclick:function(){ location.hash = '#/g/' + g.id; }},
-        S.roomChar(g, 64, false), h('div', {class:'tname', text:g.name}),
+      var t = h('button', {type:'button', class:'tile' + (S.roomDark(g) || g.banner ? ' dk' : '') + (g.banner ? ' hasimg' : ''),
+        style:S.roomVars(g) + (g.banner ? ';--bimg:url(/api/images/' + g.banner + ')' : ''), onclick:function(){ location.hash = '#/g/' + g.id; }},
+        S.roomChar(g, 64, false), h('div', {class:'tname', text:g.name, style:S.fontStyle(g.tfont)}),
         h('div', {class:'tfoot', text:g.members.length + '人  ' + (g.lastText ? g.lastText : 'まだ投稿がありません')}));
       tilt(t); grid.appendChild(t);
     });
@@ -538,6 +576,7 @@ function homeView(tab){
       if(!fr.friends.length) lists.appendChild(h('div', {class:'hint', text:'まだ友達がいません QR・リンク・IDで申請しましょう'}));
       fr.friends.forEach(function(p){
         lists.appendChild(h('div', {class:'row'}, avatar(p.id, 44), h('div', {class:'nm'}, p.name, h('small', {text:'@' + p.handle})),
+          h('button', {type:'button', class:'b3 sm', text:'メッセージ', onclick:function(){ location.hash = '#/dm/' + p.id; }}),
           h('button', {type:'button', class:'b3 sm soft', text:'解除', onclick:async function(){
             var ok = await askConfirm(p.name + ' さんを友達から外しますか', '解除する');
             if(ok) act(function(){ return api('/api/friends/remove', {body:{id:p.id}}); })();
@@ -560,6 +599,33 @@ function homeView(tab){
         h('button', {type:'button', class:'b3 sm soft', text:'QRを読み取る', onclick:scanSheet}),
         h('button', {type:'button', class:'b3 sm soft', text:'リンクを共有', onclick:function(){ shareLink('DARA', 'DARAで友達になろう', link); }})));
     return {el:h('div', null, h('h2', {class:'sec', text:'友達'}), addCard, input, results, lists), update:function(){ drawRes(); drawLists(); }};
+  }
+  function buildDm(){
+    var wrap = h('div');
+    function draw(){
+      wrap.innerHTML = '';
+      wrap.appendChild(h('h2', {class:'sec', text:'メッセージ'}));
+      if(!dms){ wrap.appendChild(h('div', {class:'hint', text:'読み込み中'})); return; }
+      var have = {};
+      if(!dms.convs.length) wrap.appendChild(h('div', {class:'empty'}, orb(72, 2, {bob:true}), h('p', {text:'友達と1対1でメッセージできます 下の友達から、はじめてみましょう'})));
+      dms.convs.forEach(function(c){
+        have[c.peer] = 1;
+        var prev = c.last.stamp ? 'スタンプ' : c.last.photo ? '写真' : c.last.text;
+        wrap.appendChild(h('button', {type:'button', class:'row dmrow', onclick:function(){ location.hash = '#/dm/' + c.peer; }},
+          avatar(c.peer, 48), h('div', {class:'nm'}, user(c.peer).name, h('small', {text:(c.last.mine ? 'あなた: ' : '') + prev})),
+          c.unread ? h('span', {class:'dot2', text:c.unread}) : h('span', {class:'ago', text:ago(c.last.ts)})));
+      });
+      var rest = (fr ? fr.friends : []).filter(function(p){ return !have[p.id]; });
+      if(rest.length){
+        wrap.appendChild(h('h2', {class:'sec', text:'友達とはじめる'}));
+        rest.forEach(function(p){
+          wrap.appendChild(h('button', {type:'button', class:'row dmrow', onclick:function(){ location.hash = '#/dm/' + p.id; }},
+            avatar(p.id, 44), h('div', {class:'nm'}, p.name, h('small', {text:'@' + p.handle})), h('span', {class:'hint', text:'メッセージ'})));
+        });
+      }
+      if(fr && !fr.friends.length) wrap.appendChild(h('div', {class:'hint', text:'まだ友達がいません 「友達」タブから追加しましょう'}));
+    }
+    return {el:wrap, update:draw};
   }
   function buildStamps(){
     var wrap = h('div'), grid = h('div', {class:'sgrid'}), mine = null;
@@ -590,7 +656,10 @@ function homeView(tab){
   function toMap(arr){ var m = {}; arr.forEach(function(u){ m[u.id] = u; }); return m; }
   function draw(){
     drawNav();
-    if(tab === 'stamps'){
+    if(tab === 'dm'){
+      if(!dmUI){ dmUI = buildDm(); body.innerHTML = ''; body.appendChild(dmUI.el); }
+      dmUI.update();
+    }else if(tab === 'stamps'){
       if(!stampsUI){ stampsUI = buildStamps(); body.innerHTML = ''; body.appendChild(stampsUI.el); }
     }else if(tab === 'friends'){
       if(!friendsUI){ friendsUI = buildFriends(); body.innerHTML = ''; body.appendChild(friendsUI.el); }
@@ -599,12 +668,12 @@ function homeView(tab){
   }
   async function load(force){
     try{
-      var r = await Promise.all([api('/api/groups'), api('/api/friends')]);
-      cacheUsers(r[0].users);
+      var r = await Promise.all([api('/api/groups'), api('/api/friends'), api('/api/dms')]);
+      cacheUsers(r[0].users); cacheStamps(r[0].stamps); cacheUsers(r[2].users);
       [r[1].friends, r[1].incoming, r[1].sent].forEach(function(a){ cacheUsers(toMap(a)); });
       var sig = JSON.stringify(r);
       if(sig === lastSig && !force) return;
-      lastSig = sig; groups = r[0].groups; fr = r[1]; draw();
+      lastSig = sig; groups = r[0].groups; fr = r[1]; dms = r[2]; draw();
     }catch(e){}
   }
   var stop = poll(load, 10000);
@@ -659,12 +728,14 @@ function groupInfoSheet(gid, info){
     var g, fr;
     try{
       var r = await Promise.all([api('/api/groups/' + gid), api('/api/friends')]);
-      g = r[0]; fr = r[1]; cacheUsers(g.users);
+      g = r[0]; fr = r[1]; cacheUsers(g.users); cacheStamps(g.stamps);
     }catch(e){ return; }
+    var G = g.group, isOwner = G.owner === st.me.id, canStyle = !G.locked || isOwner;
     box.innerHTML = '';
-    var code = g.group.code, gname = g.group.name;
-    box.appendChild(h('button', {type:'button', class:'b3 soft block', text:'部屋の名前・色・キャラクターを変える', onclick:function(){
-      close(); window.DARAStampUI.openRoomStyle(g.group, function(){ if(info) info(); });
+    var code = G.code, gname = G.name;
+    box.appendChild(h('button', {type:'button', class:'b3 soft block', disabled:!canStyle,
+      text:canStyle ? '部屋の見た目を変える（名前・色・デコ）' : '見た目はオーナーだけが変えられます', onclick:function(){
+      close(); window.DARAStampUI.openRoomStyle(G, function(){ if(info) info(); });
     }}));
     box.appendChild(h('div', {class:'lbl', text:'招待コード'}));
     box.appendChild(h('div', {class:'code', text:fmtCode(code)}));
@@ -673,16 +744,30 @@ function groupInfoSheet(gid, info){
       h('button', {type:'button', class:'b3 sm', text:'コードをコピー', onclick:function(){ copyText(fmtCode(code)); }}),
       h('button', {type:'button', class:'b3 sm soft', text:'リンクを共有', onclick:function(){ shareLink('DARA', '「' + gname + '」に招待されました', roomLink(code)); }}),
       h('button', {type:'button', class:'b3 sm soft', text:'QR', onclick:function(){ qrSheet('部屋のQR', roomLink(code), gname + '  ' + fmtCode(code)); }})));
-    box.appendChild(h('button', {type:'button', class:'ghost', text:'コードを作り直す', onclick:async function(){
+    if(canStyle) box.appendChild(h('button', {type:'button', class:'ghost', text:'コードを作り直す', onclick:async function(){
       var ok = await askConfirm('新しいコードを作ります 古いコードでは入れなくなります', '作り直す');
       if(!ok) return;
       try{ await api('/api/groups/' + gid + '/code', {body:{}}); await draw(); toast('新しいコードにしました'); }catch(e){ toast(errMsg(e)); }
     }}));
-    box.appendChild(h('div', {class:'lbl', text:'メンバー ' + g.group.members.length + '人'}));
-    g.group.members.forEach(function(id){
-      box.appendChild(h('div', {class:'row'}, avatar(id, 44), h('div', {class:'nm', text:user(id).name + (id === st.me.id ? '（あなた）' : '')})));
+    box.appendChild(h('div', {class:'lbl', text:'メンバー ' + G.members.length + '人'}));
+    G.members.forEach(function(id){
+      var row = h('div', {class:'row'}, avatar(id, 44),
+        h('div', {class:'nm'}, user(id).name + (id === st.me.id ? '（あなた）' : ''), id === G.owner ? h('small', {text:'オーナー'}) : null));
+      if(isOwner && id !== st.me.id){
+        row.appendChild(h('button', {type:'button', class:'b3 sm soft', text:'ゆずる', onclick:async function(){
+          var ok = await askConfirm(user(id).name + ' さんに、オーナーをゆずりますか あなたはオーナーではなくなります', 'ゆずる');
+          if(!ok) return;
+          try{ await api('/api/groups/' + gid + '/owner', {body:{uid:id}}); toast('オーナーをゆずりました'); await draw(); if(info) info(); }catch(e){ toast(errMsg(e)); }
+        }}));
+        row.appendChild(h('button', {type:'button', class:'b3 sm soft', text:'外す', onclick:async function(){
+          var ok = await askConfirm(user(id).name + ' さんを、この部屋から外しますか', '外す');
+          if(!ok) return;
+          try{ await api('/api/groups/' + gid + '/kick', {body:{uid:id}}); toast('外しました'); await draw(); if(info) info(); }catch(e){ toast(errMsg(e)); }
+        }}));
+      }
+      box.appendChild(row);
     });
-    var addable = fr.friends.filter(function(p){ return g.group.members.indexOf(p.id) < 0; });
+    var addable = fr.friends.filter(function(p){ return G.members.indexOf(p.id) < 0; });
     box.appendChild(h('div', {class:'lbl', text:'友達を追加'}));
     if(!addable.length) box.appendChild(h('div', {class:'hint', text:'追加できる友達はいません'}));
     addable.forEach(function(p){
@@ -692,13 +777,28 @@ function groupInfoSheet(gid, info){
           try{ await api('/api/groups/' + gid + '/members', {body:{ids:[p.id]}}); await draw(); if(info) info(); }catch(e){ toast(errMsg(e)); }
         }})));
     });
+    if(isOwner){
+      box.appendChild(h('div', {class:'lbl', text:'オーナーの設定'}));
+      box.appendChild(h('div', {class:'hint', text:'部屋の見た目とコードを変えられる人'}));
+      box.appendChild(h('div', {class:'chips'},
+        h('button', {type:'button', class:'chip' + (!G.locked ? ' on' : ''), text:'みんな', onclick:async function(){ await setLock(false); }}),
+        h('button', {type:'button', class:'chip' + (G.locked ? ' on' : ''), text:'オーナーだけ', onclick:async function(){ await setLock(true); }})));
+    }
+    async function setLock(v){
+      try{ await api('/api/groups/' + gid + '/lock', {body:{locked:v}}); await draw(); }catch(e){ toast(errMsg(e)); }
+    }
     box.appendChild(h('button', {type:'button', class:'b3 soft block', style:'margin-top:16px;color:var(--danger)', text:'この部屋を抜ける', onclick:async function(){
-      var ok = await askConfirm('この部屋を抜けますか 投稿は残ります', '抜ける');
+      var ok = await askConfirm(isOwner && G.members.length > 1 ? 'この部屋を抜けますか オーナーは、次に入った人に移ります' : 'この部屋を抜けますか 投稿は残ります', '抜ける');
       if(!ok) return;
       try{ await api('/api/groups/' + gid + '/leave', {body:{}}); close(); location.hash = '#/'; }catch(e){ toast(errMsg(e)); }
     }}));
+    if(isOwner) box.appendChild(h('button', {type:'button', class:'b3 red block', style:'margin-top:8px', text:'この部屋を削除する', onclick:async function(){
+      var ok = await askConfirm('この部屋を削除しますか 投稿・コメント・メンバーがすべて消えます 元に戻せません', '削除する');
+      if(!ok) return;
+      try{ await api('/api/groups/' + gid, {method:'DELETE', body:{}}); close(); toast('部屋を削除しました'); location.hash = '#/'; }catch(e){ toast(errMsg(e)); }
+    }}));
   }
-  var close = openSheet('部屋', box);
+  var close = openSheet('部屋の設定', box);
   draw();
 }
 
@@ -709,27 +809,32 @@ function groupView(gid){
 
   function draw(){
     if(!group) return;
-    banner.className = 'banner pt' + (group.pattern || 0) + (S.roomDark(group) ? ' dk' : '');
-    banner.style.cssText = S.roomVars(group);
+    var hasImg = !!group.banner;
+    banner.className = 'banner pt' + (group.pattern || 0) + (S.roomDark(group) || hasImg ? ' dk' : '') + (hasImg ? ' hasimg' : '');
+    banner.style.cssText = S.roomVars(group) + (hasImg ? ';--bimg:url(/api/images/' + group.banner + ')' : '');
     banner.innerHTML = '';
     var stack = h('div', {class:'stack'});
     group.members.slice(0, 5).forEach(function(id){ stack.appendChild(avatar(id, 34)); });
     banner.appendChild(h('button', {type:'button', class:'back', text:'‹ 戻る', onclick:function(){ location.hash = '#/'; }}));
     banner.appendChild(S.roomChar(group, 96, true));
-    banner.appendChild(h('h1', {text:group.name}));
+    var dc = h('div', {class:'decos', 'aria-hidden':'true'});
+    (group.decos || []).slice(0, 4).forEach(function(id){ dc.appendChild(stampEl(id, 46)); });
+    banner.appendChild(dc);
+    banner.appendChild(h('h1', {text:group.name, style:S.fontStyle(group.tfont)}));
     if(group.desc) banner.appendChild(h('div', {class:'bdesc', text:group.desc}));
     banner.appendChild(h('div', {class:'bfoot'}, stack, h('button', {type:'button', class:'pill', text:'メンバー ' + group.members.length + '人', onclick:function(){ groupInfoSheet(gid, load); }})));
     feed.innerHTML = '';
     if(!threads){ feed.appendChild(h('div', {class:'hint', style:'padding:16px 4px', text:'読み込み中'})); return; }
     if(!threads.length) feed.appendChild(h('div', {class:'hint', style:'padding:16px 4px', text:'最初のスレッドを立ててみましょう'}));
     threads.forEach(function(t){
-      feed.appendChild(postEl(t, {count:t.count, click:function(){ location.hash = '#/t/' + t.id; }, onReact:function(){ load(true); }}));
+      feed.appendChild(postEl(t, {count:t.count, click:function(){ location.hash = '#/t/' + t.id; }, onReact:function(){ load(true); },
+        extra:postTools('thread', t, group.owner === st.me.id, {edit:function(){ load(true); }, del:function(){ load(true); }})}));
     });
   }
   async function load(force){
     try{
       var r = await Promise.all([api('/api/groups/' + gid), api('/api/groups/' + gid + '/threads')]);
-      cacheUsers(r[0].users); cacheUsers(r[1].users); cacheStamps(r[1].stamps);
+      cacheUsers(r[0].users); cacheUsers(r[1].users); cacheStamps(r[0].stamps); cacheStamps(r[1].stamps);
       var sig = JSON.stringify(r);
       if(sig === lastSig && force !== true) return;
       lastSig = sig; group = r[0].group; threads = r[1].threads; draw();
@@ -770,28 +875,15 @@ function threadView(tid){
     head.innerHTML = '';
     head.appendChild(h('button', {type:'button', class:'back', text:'‹ ' + data.group.name, onclick:function(){ location.hash = '#/g/' + t.gid; }}));
     postBox.innerHTML = '';
-    var extra = null;
-    if(t.author === st.me.id){
-      extra = h('div', null, h('button', {type:'button', class:'ghost', text:'削除', onclick:async function(){
-        var ok = await askConfirm('このスレッドを削除しますか コメントも見られなくなります', '削除する');
-        if(!ok) return;
-        try{ await api('/api/threads/' + tid, {method:'DELETE', body:{}}); location.hash = '#/g/' + t.gid; }catch(e){ toast(errMsg(e)); }
-      }}));
-    }
-    postBox.appendChild(postEl(t, {big:true, extra:extra, onReact:function(){ load(true); }}));
+    var roomOwner = data.group.owner === st.me.id;
+    postBox.appendChild(postEl(t, {big:true, onReact:function(){ load(true); },
+      extra:postTools('thread', t, roomOwner, {edit:function(){ load(true); }, del:function(){ location.hash = '#/g/' + t.gid; }})}));
     list.innerHTML = '';
     list.appendChild(h('div', {class:'cdiv', text:'コメント ' + cs.length}));
     if(!cs.length) list.appendChild(h('div', {class:'hint', style:'padding:10px 4px', text:'最初のコメントを書いてみましょう'}));
     cs.forEach(function(c){
-      var ex = null;
-      if(c.author === st.me.id){
-        ex = h('div', null, h('button', {type:'button', class:'ghost', text:'削除', onclick:async function(){
-          var ok = await askConfirm('このコメントを削除しますか', '削除する');
-          if(!ok) return;
-          try{ await api('/api/comments/' + c.id, {method:'DELETE', body:{}}); load(true); }catch(e){ toast(errMsg(e)); }
-        }}));
-      }
-      list.appendChild(postEl(c, {extra:ex, onReact:function(){ load(true); }}));
+      list.appendChild(postEl(c, {onReact:function(){ load(true); },
+        extra:postTools('comment', c, roomOwner, {edit:function(){ load(true); }, del:function(){ load(true); }})}));
     });
   }
   async function load(force){
@@ -829,6 +921,7 @@ function addView(handle){
     body.appendChild(avatar(u.id, 96));
     body.appendChild(h('div', {style:'font-weight:900;font-size:22px', text:u.name}));
     body.appendChild(h('div', {class:'hint', text:'@' + u.handle}));
+    if(u.bio) body.appendChild(h('div', {style:'max-width:320px;font-size:14px;color:var(--sub);text-wrap:balance', text:u.bio}));
     var label = {none:'友達に申請', incoming:'承認して友達になる', sent:'申請しました', friend:'友達です', self:'これはあなたです'}[rel];
     var btn = h('button', {type:'button', class:'b3 block', style:'max-width:320px', text:label, disabled:rel === 'sent' || rel === 'friend' || rel === 'self'});
     btn.addEventListener('click', async function(){
@@ -837,14 +930,70 @@ function addView(handle){
       catch(e){ toast(errMsg(e)); btn.disabled = false; }
     });
     body.appendChild(btn);
+    if(rel === 'friend') body.appendChild(h('button', {type:'button', class:'b3 soft block', style:'max-width:320px', text:'メッセージを送る', onclick:function(){ location.hash = '#/dm/' + u.id; }}));
   }
   load();
   return {el:pg.el, destroy:function(){}};
 }
+
+/* ---------- DM ---------- */
+function dmView(peer){
+  var head = h('div', {class:'tbar'}), list = h('div', {class:'dmlist'}), data = null, lastSig = '', lastCount = -1;
+  var comp = makeComposer({
+    placeholder:'メッセージ', submitLabel:'送信',
+    onSubmit:function(text, ids){ if(!text && !ids.length) return Promise.resolve(); return api('/api/dms/' + peer, {body:{text:text, images:ids}}); },
+    onStamp:function(id){ return api('/api/dms/' + peer, {body:{stamp:id}}); },
+    onDone:function(){ load(true); }
+  });
+  var dock = h('div', {class:'dock'}, comp.el);
+  var el = h('div', {class:'page dmpage'}, head, list, dock);
+
+  function draw(){
+    if(!data) return;
+    head.innerHTML = '';
+    head.appendChild(h('button', {type:'button', class:'back', text:'‹ DM', onclick:function(){ location.hash = '#/dm'; }}));
+    head.appendChild(h('div', {class:'dmhead'}, avatar(peer, 34), h('b', {text:user(peer).name})));
+    var nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 140;
+    list.innerHTML = '';
+    if(!data.messages.length) list.appendChild(h('div', {class:'hint', style:'padding:30px 4px;text-align:center', text:'最初のメッセージを送ってみましょう'}));
+    data.messages.forEach(function(m){
+      var mine = m.author === st.me.id;
+      var col = h('div', {class:'dmcol'});
+      if(m.text) col.appendChild(h('div', {class:'bub', text:m.text}));
+      if(m.stamp) col.appendChild(h('div', {class:'stampbig'}, stampEl(m.stamp, 104)));
+      var md = media(m.images); if(md) col.appendChild(md);
+      var rb = reactBar(m, {onReact:function(){ load(true); }}); if(rb) col.appendChild(rb);
+      var meta = h('div', {class:'dmmeta'}, h('span', {text:ago(m.ts)}));
+      if(mine) meta.appendChild(h('button', {type:'button', class:'ghost', text:'削除', onclick:async function(){
+        var ok = await askConfirm('このメッセージを削除しますか', '削除する');
+        if(!ok) return;
+        try{ await api('/api/dmsg/' + m.id, {method:'DELETE', body:{}}); load(true); }catch(e){ toast(errMsg(e)); }
+      }}));
+      col.appendChild(meta);
+      list.appendChild(h('div', {class:'dm' + (mine ? ' me' : '')}, mine ? null : avatar(m.author, 34), col));
+    });
+    if(lastCount < 0 || (data.messages.length > lastCount && nearBottom)) setTimeout(function(){ window.scrollTo(0, document.body.scrollHeight); }, 30);
+    lastCount = data.messages.length;
+  }
+  async function load(force){
+    try{
+      var r = await api('/api/dms/' + peer);
+      cacheUsers(r.users); cacheStamps(r.stamps);
+      var sig = JSON.stringify(r);
+      if(sig === lastSig && force !== true) return;
+      lastSig = sig; data = r; draw();
+    }catch(e){ if(e.status === 404){ toast('友達ではないので、メッセージできません'); location.hash = '#/dm'; } }
+  }
+  var stop = poll(load, 3000);
+  load(true);
+  return {el:el, load:load, destroy:stop};
+}
+
 function joinView(code){
   var pg = linkPage(), body = pg.body;
   api('/api/join/' + encodeURIComponent(code)).then(function(r){
     var g = r.group;
+    cacheStamps(r.stamps);
     body.innerHTML = '';
     body.appendChild(S.roomChar(g, 128, true));
     body.appendChild(h('div', {class:'hint', text:'この部屋に招待されています'}));
@@ -876,6 +1025,8 @@ function render(){
   else if(p[0] === 't' && p[1]) cur = threadView(p[1]);
   else if(p[0] === 'add' && p[1]) cur = addView(p[1]);
   else if(p[0] === 'join' && p[1]) cur = joinView(p[1]);
+  else if(p[0] === 'dm' && p[1]) cur = dmView(p[1]);
+  else if(p[0] === 'dm') cur = homeView('dm');
   else if(p[0] === 'friends') cur = homeView('friends');
   else if(p[0] === 'stamps') cur = homeView('stamps');
   else cur = homeView('groups');
