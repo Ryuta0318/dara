@@ -1,16 +1,16 @@
 // Cloudflare Workers の静的アセットとして public/ を公開する
 //   npx wrangler deploy
-// dara-app.com を Cloudflare に追加（ネームサーバーを Cloudflare に向ける）してから公開すると、
-// 下の routes で独自ドメインに紐づく
+// まずは <name>.<アカウント>.workers.dev で公開される。
+// dara-app.com を Cloudflare に追加したら、下の routes のコメントを外す
 {
   "name": "dara-site",
   "compatibility_date": "2026-09-01",
   "assets": {
     "directory": "./public",
     "not_found_handling": "single-page-application"
-  },
-  "routes": [
-    { "pattern": "dara-app.com", "custom_domain": true },
-    { "pattern": "www.dara-app.com", "custom_domain": true }
-  ]
+  }
+  // "routes": [
+  //   { "pattern": "dara-app.com", "custom_domain": true },
+  //   { "pattern": "www.dara-app.com", "custom_domain": true }
+  // ]
 }
