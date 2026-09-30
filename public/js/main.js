@@ -1,7 +1,7 @@
 // DARA landing — ページ全体のふるまい
 
 // アプリのURL（DARA用のURLが決まったらここを変える）
-const APP_URL = "https://setroom.ryuta-suzuki.workers.dev";
+const APP_URL = "https://dara-app.ryuta-suzuki.workers.dev";
 
 document.documentElement.classList.remove("no-js");
 document.getElementById("app-link").href = APP_URL;
