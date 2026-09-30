@@ -3,7 +3,7 @@
 // まずは <name>.<アカウント>.workers.dev で公開される。
 // dara-app.com を Cloudflare に追加したら、下の routes のコメントを外す
 {
-  "name": "dara-site",
+  "name": "dara",
   "compatibility_date": "2026-09-01",
   "assets": {
     "directory": "./public",
