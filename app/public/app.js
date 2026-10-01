@@ -1294,6 +1294,10 @@ function groupInfoSheet(gid, info){
     var card = roomCardEl(G, {big:true, no:Math.max(1, (st.groupOrder || []).indexOf(G.id) + 1)});
     if(canStyle){ card.style.cursor = 'pointer'; card.appendChild(h('span', {class:'wchev', text:'›'})); card.addEventListener('click', function(){ close(); window.DARAStampUI.openRoomStyle(G, function(){ if(info) info(); }); }); }
     box.appendChild(card);
+    // 部屋のステージ（背景・キャラ・デコ）は、部屋の画面には出さず、ここでだけ見せる
+    if(typeof G.scene === 'number' || (G.decor || []).length){
+      box.appendChild(h('div', {class:'stagebox insheet'}, window.DARAScene.stage(G, {vars:S.roomVars(G)})));
+    }
     // メンバー
     var showAll = false;
     var mem = h('div', {class:'panel'});
@@ -1387,18 +1391,13 @@ function groupInfoSheet(gid, info){
 }
 
 function groupView(gid){
-  var banner = h('div', {class:'banner'}), stageBox = h('div', {class:'stagebox'}), feed = h('div', {class:'feed'}), group = null, threads = null, lastSig = '';
+  var banner = h('div', {class:'banner'}), feed = h('div', {class:'feed'}), group = null, threads = null, lastSig = '';
   var entry = h('button', {type:'button', class:'entry', onclick:function(){ openCompose(gid, load, function(){ return group ? group.members.map(user) : []; }); }}, avatar(st.me.id, 44), h('span', {text:'いま何してる'}));
-  var el = h('div', {class:'page'}, banner, stageBox, entry, feed);
+  var el = h('div', {class:'page'}, banner, entry, feed);
 
   function draw(){
     if(!group) return;
     fillBanner(banner, group, {onBack:function(){ location.hash = '#/'; }, onSearch:function(){ searchSheet(gid); }, onSettings:function(){ groupInfoSheet(gid, load); }, onRefresh:function(){ return load(true); }});
-    stageBox.innerHTML = '';
-    if(typeof group.scene === 'number' || (group.decor || []).length){
-      var stg = window.DARAScene.stage(group, {vars:S.roomVars(group)});
-      stageBox.appendChild(stg);
-    }
     feed.innerHTML = '';
     if(!threads){ feed.appendChild(h('div', {class:'hint', style:'padding:16px 4px', text:'読み込み中'})); return; }
     if(!threads.length) feed.appendChild(h('div', {class:'hint', style:'padding:16px 4px', text:'最初のスレッドを立ててみましょう'}));

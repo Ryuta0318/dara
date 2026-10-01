@@ -1073,3 +1073,6 @@ html{overscroll-behavior-y:contain}
 .pempty b{font-size:20px; font-weight:900}.pempty small{color:var(--sub); font-weight:700}
 .profile .feed{margin-top:0}
 .pbio2{text-align:left}
+
+/* 部屋の設定シートの中のステージ */
+.stagebox.insheet{margin:12px 0 6px}
