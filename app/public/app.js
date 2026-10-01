@@ -59,7 +59,7 @@ function imgUrl(id){ return '/api/images/' + id; }
 
 var ERR = {
   login:'IDまたはパスワードが違います', taken:'このIDはすでに使われています', invite:'招待コードが違います',
-  handle:'IDは半角の英数字と_で3〜20文字にしてください', password:'パスワードは8文字以上にしてください', name:'名前を入力してください',
+  handle:'IDは半角の英数字と_で3〜20文字にしてください', same_handle:'いまと同じIDです', password:'パスワードは8文字以上にしてください', name:'名前を入力してください',
   too_many:'試行が多すぎます しばらくしてからお試しください', too_large:'画像が大きすぎます', type:'この画像は使えません', empty:'内容を入力してください',
   limit:'スタンプは100個までです', stamp:'このスタンプは使えませんでした', too_many_reacts:'1つの投稿に押せるスタンプは10個までです',
   recovery:'ユーザーIDか復旧コードが違います', blocked:'この相手には送れません', pin_limit:'ピン留めは3つまでです', no_poll:'アンケートではありません',
@@ -792,12 +792,36 @@ function profileSheet(after){
     h('div', {class:'panel'}, h('div', {class:'lbl', style:'margin-top:0', text:'表示名'}), nameIn, h('div', {class:'lbl', text:'自己紹介'}), bioIn), stats,
     h('button', {type:'button', class:'b3 soft block', style:'margin-top:12px', text:'アイコンを選ぶ', onclick:pickIcon}), file, save,
     h('div', {class:'panel', style:'margin-top:16px;padding:4px 6px'},
+      h('button', {type:'button', class:'menurow plain', onclick:function(){ handleSheet(function(){ me = st.me; drawTop(); }); }}, h('span', {class:'mi', text:'@'}), h('span', {class:'mtt', text:'ユーザーIDを変える'}), h('small', {class:'msub', text:'@' + me.handle}), h('span', {class:'chev', text:'›'})),
       h('button', {type:'button', class:'menurow plain', onclick:function(){ close(); settingsSheet(); }}, h('span', {class:'mi', text:'⚙'}), h('span', {class:'mtt', text:'設定'}), h('span', {class:'chev', text:'›'})),
       h('button', {type:'button', class:'menurow plain danger', onclick:async function(){
         try{ await api('/api/logout', {body:{}}); }catch(e){}
         st.me = null; close(); location.hash = '#/'; render();
       }}, h('span', {class:'mi', text:'⇥'}), h('span', {class:'mtt', text:'ログアウト'}), h('span', {class:'chev', text:'›'}))));
   var close = openSheet('プロフィール', box, after);
+}
+
+// ユーザーIDを変える（いまのパスワードで確認）。古いIDも30日間は自分につながる
+function handleSheet(done){
+  var idIn = h('input', {class:'field', type:'text', value:st.me.handle, maxlength:'20', autocapitalize:'none', autocomplete:'username', spellcheck:'false', 'aria-label':'新しいユーザーID'});
+  var pwIn = h('input', {class:'field', type:'password', placeholder:'いまのパスワード', autocomplete:'current-password', 'aria-label':'いまのパスワード', style:'margin-top:8px'});
+  var go = h('button', {type:'button', class:'b3 block', style:'margin-top:12px', text:'IDを変える'});
+  idIn.addEventListener('input', function(){ var v = idIn.value.toLowerCase().replace(/[^a-z0-9_]/g, ''); if(v !== idIn.value) idIn.value = v; });
+  go.addEventListener('click', async function(){
+    go.disabled = true;
+    try{
+      var r = await api('/api/me/handle', {body:{handle:idIn.value.trim(), pw:pwIn.value}});
+      st.me = r.me; var m = {}; m[r.me.id] = r.me; cacheUsers(m);
+      close(); toast('IDを @' + r.me.handle + ' に変えました'); if(done) done();
+    }catch(e){ toast(e.code === 'login' ? 'パスワードが違います' : errMsg(e)); go.disabled = false; }
+  });
+  var box = h('div', null,
+    h('div', {class:'lbl', style:'margin-top:0', text:'新しいユーザーID'}), h('div', {class:'idfield'}, h('span', {class:'at', text:'@'}), idIn),
+    h('div', {class:'hint', style:'margin-top:6px', text:'半角の英数字と _ で3〜20文字  ログインにも使います'}),
+    h('div', {class:'lbl', text:'確認のため'}), pwIn, go,
+    h('div', {class:'hint', style:'margin-top:12px;line-height:1.7', text:'変える前のID（@' + st.me.handle + '）も30日間はあなたにつながります（前の投稿のメンション・友達追加のリンク・ログイン）。そのあいだ、ほかの人はそのIDを使えません。'}));
+  var close = openSheet('ユーザーIDを変える', box);
+  setTimeout(function(){ idIn.focus(); idIn.select(); }, 60);
 }
 
 /* ---------- notifications / search ---------- */

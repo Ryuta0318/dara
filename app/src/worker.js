@@ -87,6 +87,7 @@ const VIDEO_MAX = 30 * 1024 * 1024; // 1本 30MB まで（データベースの�
 const VPART = 1.5 * 1024 * 1024; // データベースに保存するとき（R2 をつないでいないとき）
 const VPART_R2 = 8 * 1024 * 1024; // R2 に保存するとき
 const VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/webm"];
+const OLD_HANDLE_MS = 30 * 864e5; // 古いユーザーIDを取っておく期間
 const builtinStamp = (v) => typeof v === "string" && /^b:[a-z0-9]{1,12}$/.test(v);
 
 export default {
@@ -299,6 +300,8 @@ export class Hub extends DurableObject {
     this.sql.exec("CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT)");
     // 動画：1本を 1.5MB ずつに分けて保存する（SQLite の1つの値は 2MB まで）
     this.sql.exec("CREATE TABLE IF NOT EXISTS videos(id TEXT PRIMARY KEY, owner TEXT, mime TEXT, size INTEGER, parts INTEGER, poster TEXT, w INTEGER, h INTEGER, dur REAL, done INTEGER DEFAULT 0, ts INTEGER)");
+    // 変える前のユーザーID。30日間はその人につながり、ほかの人は使えない
+    this.sql.exec("CREATE TABLE IF NOT EXISTS old_handles(handle TEXT PRIMARY KEY, uid TEXT, ts INTEGER)");
     this.sql.exec("CREATE TABLE IF NOT EXISTS vparts(vid TEXT, n INTEGER, data BLOB, PRIMARY KEY(vid, n))");
     // 写真・動画の中身は R2（外付けのファイル置き場）へ。r2=1 なら中身は R2 にあり、data は空
     for (const col of ["ALTER TABLE images ADD COLUMN r2 INTEGER DEFAULT 0", "ALTER TABLE videos ADD COLUMN r2 INTEGER DEFAULT 0", "ALTER TABLE videos ADD COLUMN upload_id TEXT", "ALTER TABLE vparts ADD COLUMN etag TEXT"]) {
@@ -476,11 +479,23 @@ export class Hub extends DurableObject {
     const url = o.tid ? `/#/t/${o.tid}` : kind === "mention" && o.peer ? `/#/dm/${o.peer}` : kind === "friend_req" || kind === "friend_ok" ? "/#/friends" : "/";
     this.pushTo(uid, "other", { t: room || "DARA", b: `${name}${what}${o.text && kind !== "report" ? "\n" + o.text : ""}`, u: url, g: `${kind}:${o.tid || actor}` });
   }
+  // ユーザーIDから人を探す。30日以内に変えた古いIDでも見つかる
+  userIdByHandle(handle) {
+    const u = this.one("SELECT id FROM users WHERE handle=?", handle);
+    if (u) return u.id;
+    const o = this.one("SELECT uid FROM old_handles WHERE handle=? AND ts>?", handle, Date.now() - OLD_HANDLE_MS);
+    return o ? o.uid : null;
+  }
+  // そのIDを、ほかの人が使っている（または30日以内に手放したばかり）か
+  handleTaken(handle, myId) {
+    if (this.one("SELECT 1 x FROM users WHERE handle=? AND id!=?", handle, myId || "")) return true;
+    return !!this.one("SELECT 1 x FROM old_handles WHERE handle=? AND uid!=? AND ts>?", handle, myId || "", Date.now() - OLD_HANDLE_MS);
+  }
   // @ で呼ばれた人（部屋のメンバーだけ / DMは相手だけ）
   mentioned(text, { gid, peer }) {
     const hs = handlesIn(text);
     if (!hs.length) return [];
-    const rows = this.q(`SELECT id FROM users WHERE handle IN (${hs.map(() => "?").join(",")})`, ...hs).map((r) => r.id);
+    const rows = [...new Set(hs.map((x) => this.userIdByHandle(x)).filter(Boolean))];
     if (gid) return rows.filter((id) => this.member(gid, id));
     if (peer) return rows.filter((id) => id === peer);
     return [];
@@ -614,6 +629,27 @@ export class Hub extends DurableObject {
       if (b.animal !== undefined) this.run("UPDATE users SET animal=? WHERE id=?", b.animal === null ? null : cInt(b.animal, 0, 15, 0), me.id);
       if (b.nudge !== undefined) this.run("UPDATE users SET nudge=? WHERE id=?", b.nudge ? 1 : 0, me.id);
       if (b.hideRead !== undefined) this.run("UPDATE users SET hide_read=? WHERE id=?", b.hideRead ? 1 : 0, me.id);
+      return json({ me: this.selfOut(this.one("SELECT id,handle,name,color,avatar,bio,animal,hide_read,nudge FROM users WHERE id=?", me.id)) });
+    }
+
+    // ---- ユーザーIDの変更（パスワードの確認つき）----
+    if (path === "/api/me/handle" && M === "POST") {
+      const b = await this.body(req);
+      const key = "p:" + me.id;
+      const n = this.throttle(key);
+      const u = this.one("SELECT * FROM users WHERE id=?", me.id);
+      if ((await pbkdf(String(b.pw || ""), u.salt)) !== u.pw) {
+        this.fail(key, n);
+        throw new HttpError(401, "login");
+      }
+      const handle = str(b.handle, 20).toLowerCase().replace(/^@/, "");
+      if (!/^[a-z0-9_]{3,20}$/.test(handle)) throw bad("handle");
+      if (handle === u.handle) throw bad("same_handle");
+      if (this.handleTaken(handle, me.id)) throw new HttpError(409, "taken");
+      this.rate("h:" + me.id, 3, 864e5);
+      this.run("INSERT OR REPLACE INTO old_handles(handle,uid,ts) VALUES(?,?,?)", u.handle, me.id, Date.now());
+      this.run("DELETE FROM old_handles WHERE handle=? AND uid=?", handle, me.id);
+      this.run("UPDATE users SET handle=? WHERE id=?", handle, me.id);
       return json({ me: this.selfOut(this.one("SELECT id,handle,name,color,avatar,bio,animal,hide_read,nudge FROM users WHERE id=?", me.id)) });
     }
 
@@ -789,7 +825,8 @@ export class Hub extends DurableObject {
     }
     // 友達追加リンク / QR から開いたときの相手の確認用
     if ((m = path.match(/^\/api\/u\/([a-z0-9_]{3,20})$/)) && M === "GET") {
-      const u = this.one("SELECT id,handle,name,color,avatar,bio,animal FROM users WHERE handle=?", m[1]);
+      const uid = this.userIdByHandle(m[1]);
+      const u = uid ? this.one("SELECT id,handle,name,color,avatar,bio,animal FROM users WHERE id=?", uid) : null;
       if (!u || this.blockedPair(me.id, u.id)) throw new HttpError(404, "not_found");
       return json({ user: pub(u), rel: this.relation(me.id, u.id), blocked: this.blockedByMe(me.id, u.id) });
     }
@@ -845,7 +882,10 @@ export class Hub extends DurableObject {
     if (path === "/api/friends/request" && M === "POST") {
       const b = await this.body(req);
       const target = b.handle
-        ? this.one("SELECT id FROM users WHERE handle=?", str(b.handle, 20).toLowerCase().replace(/^@/, ""))
+        ? (() => {
+            const uid = this.userIdByHandle(str(b.handle, 20).toLowerCase().replace(/^@/, ""));
+            return uid ? { id: uid } : null;
+          })()
         : this.one("SELECT id FROM users WHERE id=?", str(b.id, 40));
       if (!target || target.id === me.id || this.blockedPair(me.id, target.id)) throw bad("user");
       this.rate("f:" + me.id, 60, 36e5);
@@ -1516,7 +1556,7 @@ export class Hub extends DurableObject {
     if (!/^[a-z0-9_]{3,20}$/.test(handle)) throw bad("handle");
     if (!name) throw bad("name");
     if (pw.length < 8 || pw.length > 200) throw bad("password");
-    if (this.one("SELECT 1 x FROM users WHERE handle=?", handle)) throw new HttpError(409, "taken");
+    if (this.handleTaken(handle)) throw new HttpError(409, "taken");
     const id = rid(10);
     const salt = rid(8);
     this.run(
@@ -1538,7 +1578,8 @@ export class Hub extends DurableObject {
     const pw = typeof b.password === "string" ? b.password : "";
     const key = "l:" + handle;
     const n = this.throttle(key);
-    const u = this.one("SELECT * FROM users WHERE handle=?", handle);
+    const lid = this.userIdByHandle(handle);
+    const u = lid ? this.one("SELECT * FROM users WHERE id=?", lid) : null;
     const ok = u && (await pbkdf(pw, u.salt)) === u.pw;
     if (!ok) {
       this.fail(key, n);
@@ -1556,7 +1597,8 @@ export class Hub extends DurableObject {
     const n1 = this.throttle(ip);
     const n2 = this.throttle("r:" + handle);
     const pw = typeof b.pw === "string" ? b.pw : "";
-    const u = this.one("SELECT * FROM users WHERE handle=?", handle);
+    const rid2 = this.userIdByHandle(handle);
+    const u = rid2 ? this.one("SELECT * FROM users WHERE id=?", rid2) : null;
     const ok = u && u.recovery && (await sha("rc:" + normRecovery(b.code))) === u.recovery;
     if (!ok) {
       this.fail(ip, n1);
