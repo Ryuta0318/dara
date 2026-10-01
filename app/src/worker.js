@@ -84,7 +84,8 @@ const normRecovery = (v) => str(v, 40).toUpperCase().replace(/[\s-]/g, "");
 // 添付の呼び名（通知や部屋の一覧の「最後の投稿」に使う）
 const mediaLabel = (imgs) => (Array.isArray(imgs) && imgs.some((x) => String(x).startsWith("v:")) ? "動画" : "写真");
 const VIDEO_MAX = 100 * 1024 * 1024; // 1本 100MB まで
-const VPART = 1.5 * 1024 * 1024;
+const VPART = 1.5 * 1024 * 1024; // データベースに保存するとき（R2 をつないでいないとき）
+const VPART_R2 = 8 * 1024 * 1024; // R2 に保存するとき
 const VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/webm"];
 const builtinStamp = (v) => typeof v === "string" && /^b:[a-z0-9]{1,12}$/.test(v);
 
@@ -192,9 +193,29 @@ export class Hub extends DurableObject {
       this.sendNudges(nudgeSlot(Date.now()));
     } catch (e) {
       console.error("nudge", String(e));
+    }
+    try {
+      await this.moveImagesToR2(300);
+    } catch (e) {
+      console.error("r2 move", String(e));
     } finally {
       await this.ctx.storage.setAlarm(nextNudge(Date.now()));
     }
+  }
+  // ---- R2（外付けのファイル置き場）----
+  get media() {
+    return (this.env && this.env.MEDIA) || null;
+  }
+  // データベースに入っている古い写真を R2 に移して、データベースからは消す
+  async moveImagesToR2(limit) {
+    if (!this.media) return 0;
+    const rows = this.q("SELECT id, mime, data FROM images WHERE (r2 IS NULL OR r2=0) AND data IS NOT NULL LIMIT ?", limit);
+    for (const r of rows) await this.moveImage(r);
+    return rows.length;
+  }
+  async moveImage(r) {
+    await this.media.put("img/" + r.id, r.data, { httpMetadata: { contentType: r.mime } });
+    this.run("UPDATE images SET r2=1, data=NULL WHERE id=?", r.id);
   }
   sendNudges(slot, onlyUid) {
     if (slot < 0) return 0;
@@ -279,6 +300,12 @@ export class Hub extends DurableObject {
     // 動画：1本を 1.5MB ずつに分けて保存する（SQLite の1つの値は 2MB まで）
     this.sql.exec("CREATE TABLE IF NOT EXISTS videos(id TEXT PRIMARY KEY, owner TEXT, mime TEXT, size INTEGER, parts INTEGER, poster TEXT, w INTEGER, h INTEGER, dur REAL, done INTEGER DEFAULT 0, ts INTEGER)");
     this.sql.exec("CREATE TABLE IF NOT EXISTS vparts(vid TEXT, n INTEGER, data BLOB, PRIMARY KEY(vid, n))");
+    // 写真・動画の中身は R2（外付けのファイル置き場）へ。r2=1 なら中身は R2 にあり、data は空
+    for (const col of ["ALTER TABLE images ADD COLUMN r2 INTEGER DEFAULT 0", "ALTER TABLE videos ADD COLUMN r2 INTEGER DEFAULT 0", "ALTER TABLE videos ADD COLUMN upload_id TEXT", "ALTER TABLE vparts ADD COLUMN etag TEXT"]) {
+      try {
+        this.sql.exec(col);
+      } catch {}
+    }
     this.sql.exec("CREATE TABLE IF NOT EXISTS push_subs(id TEXT PRIMARY KEY, uid TEXT, endpoint TEXT UNIQUE, p256dh TEXT, auth TEXT, ts INTEGER)");
     this.sql.exec("CREATE INDEX IF NOT EXISTS ps_uid ON push_subs(uid)");
     for (const g of this.q("SELECT id FROM groups WHERE code IS NULL")) {
@@ -629,7 +656,10 @@ export class Hub extends DurableObject {
       const buf = await req.arrayBuffer();
       if (!buf.byteLength || buf.byteLength > 1.9e6) throw new HttpError(413, "too_large");
       const id = rid(12);
-      this.run("INSERT INTO images(id,owner,mime,data,ts) VALUES(?,?,?,?,?)", id, me.id, mime, buf, Date.now());
+      if (this.media) {
+        await this.media.put("img/" + id, buf, { httpMetadata: { contentType: mime } });
+        this.run("INSERT INTO images(id,owner,mime,data,ts,r2) VALUES(?,?,?,NULL,?,1)", id, me.id, mime, Date.now());
+      } else this.run("INSERT INTO images(id,owner,mime,data,ts) VALUES(?,?,?,?,?)", id, me.id, mime, buf, Date.now());
       return json({ id });
     }
     // ---- 動画：はじめる → 1.5MB ずつ送る → おわり。再生は Range（部分取得）に対応 ----
@@ -642,6 +672,12 @@ export class Hub extends DurableObject {
       if (size > VIDEO_MAX) throw new HttpError(413, "too_large");
       this.rate("v:" + me.id, 30, 36e5);
       const id = rid(12);
+      if (this.media) {
+        // R2 の分割アップロード（最後以外は同じ大きさ・5MB 以上）
+        const up = await this.media.createMultipartUpload("vid/" + id, { httpMetadata: { contentType: mime === "video/quicktime" ? "video/mp4" : mime } });
+        this.run("INSERT INTO videos(id,owner,mime,size,parts,ts,r2,upload_id) VALUES(?,?,?,?,?,?,1,?)", id, me.id, mime, size, Math.ceil(size / VPART_R2), Date.now(), up.uploadId);
+        return json({ id, part: VPART_R2 });
+      }
       this.run("INSERT INTO videos(id,owner,mime,size,parts,ts) VALUES(?,?,?,?,?,?)", id, me.id, mime, size, Math.ceil(size / VPART), Date.now());
       return json({ id, part: VPART });
     }
@@ -651,9 +687,14 @@ export class Hub extends DurableObject {
       const n = Number(m[2]);
       if (n >= v.parts) throw bad("part");
       const buf = await req.arrayBuffer();
-      const want = n === v.parts - 1 ? v.size - n * VPART : VPART;
+      const unit = v.r2 ? VPART_R2 : VPART;
+      const want = n === v.parts - 1 ? v.size - n * unit : unit;
       if (buf.byteLength !== want) throw bad("part_size");
-      this.run("INSERT OR REPLACE INTO vparts(vid,n,data) VALUES(?,?,?)", v.id, n, buf);
+      if (v.r2) {
+        if (!this.media) throw new HttpError(503, "storage");
+        const part = await this.media.resumeMultipartUpload("vid/" + v.id, v.upload_id).uploadPart(n + 1, buf);
+        this.run("INSERT OR REPLACE INTO vparts(vid,n,data,etag) VALUES(?,?,NULL,?)", v.id, n, part.etag);
+      } else this.run("INSERT OR REPLACE INTO vparts(vid,n,data) VALUES(?,?,?)", v.id, n, buf);
       return json({ ok: true });
     }
     if ((m = path.match(/^\/api\/videos\/([a-f0-9]{24})\/done$/)) && M === "POST") {
@@ -663,6 +704,12 @@ export class Hub extends DurableObject {
       if (got !== v.parts) throw bad("incomplete");
       const b = await this.body(req);
       const poster = this.ownImgs([b.poster], me.id)[0] || null;
+      if (v.r2) {
+        if (!this.media) throw new HttpError(503, "storage");
+        const parts = this.q("SELECT n, etag FROM vparts WHERE vid=? ORDER BY n", v.id).map((p) => ({ partNumber: p.n + 1, etag: p.etag }));
+        await this.media.resumeMultipartUpload("vid/" + v.id, v.upload_id).complete(parts);
+        this.run("DELETE FROM vparts WHERE vid=?", v.id);
+      }
       const w = cInt(b.w, 0, 10000, 0), hh = cInt(b.h, 0, 10000, 0);
       const dur = Number.isFinite(Number(b.dur)) ? Math.max(0, Math.min(36000, Number(b.dur))) : 0;
       this.run("UPDATE videos SET done=1, poster=?, w=?, h=?, dur=? WHERE id=?", poster, w, hh, dur, v.id);
@@ -692,6 +739,12 @@ export class Hub extends DurableObject {
       const headers = { "content-type": type, "accept-ranges": "bytes", "content-length": String(end - start + 1), "cache-control": "private, max-age=31536000, immutable", "x-content-type-options": "nosniff" };
       if (status === 206) headers["content-range"] = `bytes ${start}-${end}/${v.size}`;
       if (M === "HEAD") return new Response(null, { status, headers });
+      if (v.r2) {
+        if (!this.media) throw new HttpError(503, "storage");
+        const obj = await this.media.get("vid/" + v.id, { range: { offset: start, length: end - start + 1 } });
+        if (!obj) throw new HttpError(404, "not_found");
+        return new Response(obj.body, { status, headers });
+      }
       const sql = this.sql;
       let n = Math.floor(start / VPART);
       const last = Math.floor(end / VPART);
@@ -710,11 +763,18 @@ export class Hub extends DurableObject {
       return new Response(body, { status, headers });
     }
     if ((m = path.match(/^\/api\/images\/([a-f0-9]{24})$/)) && M === "GET") {
-      const r = this.one("SELECT mime,data FROM images WHERE id=?", m[1]);
+      const r = this.one("SELECT id,mime,data,r2 FROM images WHERE id=?", m[1]);
       if (!r) throw new HttpError(404, "not_found");
-      return new Response(r.data, {
-        headers: { "content-type": r.mime, "cache-control": "private, max-age=31536000, immutable", "x-content-type-options": "nosniff" },
-      });
+      const headers = { "content-type": r.mime, "cache-control": "private, max-age=31536000, immutable", "x-content-type-options": "nosniff" };
+      if (r.r2) {
+        if (!this.media) throw new HttpError(503, "storage");
+        const obj = await this.media.get("img/" + r.id);
+        if (!obj) throw new HttpError(404, "not_found");
+        return new Response(obj.body, { headers });
+      }
+      // まだデータベースにある古い写真は、見られたついでに R2 へ移す
+      if (this.media && r.data) this.ctx.waitUntil(this.moveImage(r).catch((e) => console.error("r2 move", String(e))));
+      return new Response(r.data, { headers });
     }
 
     // ---- 友達 ----
