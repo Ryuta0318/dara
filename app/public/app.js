@@ -845,7 +845,6 @@ function fillBanner(banner, group, o){
   banner.appendChild(o.preview ? h('span', {class:'back', text:'‹ 戻る'}) : h('button', {type:'button', class:'back', text:'‹ 戻る', onclick:o.onBack}));
   banner.appendChild(o.preview ? h('span', {class:'gear', 'aria-hidden':'true'}, svgGear())
     : h('button', {type:'button', class:'gear', 'aria-label':'部屋の設定', onclick:o.onSettings}, svgGear()));
-  banner.appendChild(S.roomChar(group, 96, true));
   var dc = h('div', {class:'decos', 'aria-hidden':'true'});
   (group.decos || []).slice(0, 4).forEach(function(id){ dc.appendChild(stampEl(id, 46)); });
   banner.appendChild(dc);
@@ -871,7 +870,7 @@ function tileEl(g, o){
 function homeView(tab){
   var body = h('div');
   var nav = h('nav', {class:'nav', 'aria-label':'メニュー'});
-  var groups = null, fr = null, dms = null, nf = null, lastSig = '', friendsUI = null, stampsUI = null, dmUI = null, killHero = null;
+  var bell = null, groups = null, fr = null, dms = null, nf = null, lastSig = '', friendsUI = null, stampsUI = null, dmUI = null, killHero = null;
 
   var heroBox = tab === 'groups' ? h('div', {class:'hero3d'}) : null;
   if(heroBox) killHero = mountHero(heroBox);
@@ -883,8 +882,10 @@ function homeView(tab){
     topR.innerHTML = '';
     var nu = nf ? nf.unread : 0;
     topR.appendChild(h('button', {type:'button', class:'topbtn', 'aria-label':'探す', onclick:function(){ searchSheet(); }}, svgSearch()));
-    topR.appendChild(h('button', {type:'button', class:'topbtn', 'aria-label':'通知' + (nu ? ' ' + nu + '件' : ''), onclick:function(){ notifSheet(function(){ load(true); }); }}, svgBell(), nu ? h('span', {class:'dot', text:nu > 99 ? '99+' : nu}) : null));
     topR.appendChild(h('button', {type:'button', 'aria-label':'プロフィール', onclick:profileSheet}, avatar(st.me.id, 38)));
+    var old = bell, nb = h('button', {type:'button', class:'fbell' + (nu ? ' has' : ''), 'aria-label':'通知' + (nu ? ' ' + nu + '件' : ''), onclick:function(){ notifSheet(function(){ load(true); }); }}, svgBell(), nu ? h('span', {class:'dot', text:nu > 99 ? '99+' : nu}) : null);
+    if(old && old.parentNode) old.parentNode.replaceChild(nb, old); else el.appendChild(nb);
+    bell = nb;
   }
 
   function drawNav(){
@@ -978,14 +979,23 @@ function homeView(tab){
       }
     }
     var link = friendLink(st.me.handle);
-    var addCard = h('div', {class:'addcard'},
-      h('div', {class:'lbl', style:'margin-top:0', text:'あなたのID'}),
-      h('div', {class:'myid', text:'@' + st.me.handle}),
-      h('div', {class:'btnrow'},
-        h('button', {type:'button', class:'b3 sm', text:'QRを見せる', onclick:function(){ qrSheet('友達追加のQR', link, '@' + st.me.handle); }}),
-        h('button', {type:'button', class:'b3 sm soft', text:'QRを読み取る', onclick:scanSheet}),
-        h('button', {type:'button', class:'b3 sm soft', text:'リンクを共有', onclick:function(){ shareLink('DARA', 'DARAで友達になろう', link); }})));
-    return {el:h('div', null, h('h2', {class:'sec', text:'友達'}), addCard, input, results, lists), update:function(){ drawRes(); drawLists(); }};
+    function menuRow(ic, t, sub, fn){
+      return h('button', {type:'button', class:'mrow', onclick:fn}, h('span', {class:'mic', text:ic}), h('span', {class:'mt'}, t, sub ? h('small', {text:sub}) : null));
+    }
+    function addMenu(){
+      var sh;
+      function go(fn){ return function(){ if(sh) sh(); setTimeout(fn, 160); }; }
+      var c = h('div', null,
+        h('div', {class:'myidrow'}, h('small', {text:'あなたのID'}), h('b', {text:'@' + st.me.handle})),
+        menuRow('🔍', 'IDで探す', '名前やIDで検索', go(function(){ input.focus(); })),
+        menuRow('▦', 'マイQRコード', '相手に読み取ってもらう', go(function(){ qrSheet('友達追加のQR', link, '@' + st.me.handle); })),
+        menuRow('📷', 'QRコードを読み取る', null, go(scanSheet)),
+        menuRow('🔗', 'リンクを共有', null, go(function(){ shareLink('DARA', 'DARAで友達になろう', link); })));
+      sh = openSheet('友達を追加', c);
+    }
+    var head = h('div', {class:'sechead'}, h('h2', {class:'sec', text:'友達'}),
+      h('button', {type:'button', class:'addbtn', 'aria-label':'友達を追加', onclick:addMenu}, '＋'));
+    return {el:h('div', null, head, input, results, lists), update:function(){ drawRes(); drawLists(); }};
   }
   function buildDm(){
     var wrap = h('div');
