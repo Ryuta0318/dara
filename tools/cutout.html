@@ -60,6 +60,7 @@ function cut(img, T, size){
       var near = (xq > 0 && bg[q - 1]) || (xq < w - 1 && bg[q + 1]) || (y > 0 && bg[q - w]) || (y < h - 1 && bg[q + w]);
       if(near){ var m = Math.max(p[o], p[o + 1], p[o + 2]); a = Math.max(0, Math.min(255, (m - T * .5) / (T * 1.2) * 255)); }
     }
+    if(a < 24) a = 0;
     p[o + 3] = a;
     if(a > 8){ if(xq < minX) minX = xq; if(xq > maxX) maxX = xq; if(y < minY) minY = y; if(y > maxY) maxY = y; }
   }
