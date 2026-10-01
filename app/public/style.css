@@ -953,3 +953,17 @@ body{font-family:"Zen Maru Gothic","Hiragino Maru Gothic ProN","Hiragino Kaku Go
 .wcard .wchar .achar{width:132px !important}
 .wcard .winfo{left:134px}
 .glist{padding-top:34px}
+
+/* プロフィールページ */
+.avlink{padding:0; border-radius:50%; display:block; flex:none; background:none; transition:transform .15s cubic-bezier(.2,1.5,.4,1)}
+.avlink:active{transform:scale(.92)}
+.post .avlink{align-self:start}
+.pbio{margin:6px 0 14px; padding:14px 16px; border-radius:22px; background:#0b0a0e; box-shadow:inset 0 3px 8px rgba(0,0,0,.9),inset 0 -1px 0 rgba(255,255,255,.1); white-space:pre-wrap; line-height:1.7; font-size:15px; text-align:left}
+.pbio.empty{color:var(--sub)}
+.pstats{display:flex; gap:10px; margin:0 0 14px}
+.pstats>div{flex:1; text-align:center; padding:12px 6px; border-radius:22px; background:linear-gradient(#1f1e26,#15141a); box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 5px 0 #000,0 12px 16px rgba(0,0,0,.45)}
+.pstats b{display:block; font-size:22px; font-weight:900}.pstats small{color:var(--sub); font-weight:800; font-size:12px}
+.pact{display:flex; gap:10px; justify-content:center; margin:18px 0 12px; flex-wrap:wrap}
+.roomtag{margin-top:8px; padding:4px 12px; border-radius:999px; font-size:12px; font-weight:800; color:#ffa6d1; background:rgba(255,166,209,.12); cursor:pointer}
+.mcell{background:none}
+.hbtn{width:40px; height:40px; display:grid; place-items:center; font-size:26px; line-height:1; color:var(--ink); flex:none; cursor:pointer}

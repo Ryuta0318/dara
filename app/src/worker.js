@@ -90,11 +90,72 @@ export default {
   },
 };
 
+
+// ---- 投稿をうながす通知（日本時間 8:00 / 11:30 / 15:00 / 18:30 / 21:30）----
+const NUDGE_TIMES = [[8, 0], [11, 30], [15, 0], [18, 30], [21, 30]];
+const NUDGES = [
+  ["おはよう！いま何を考えてる？", "おはよう！今日はどんな一日になりそう？", "おはよう☀ 朝のひとこと、投稿してみない？"],
+  ["お昼だね！いま何してる？", "ランチは何食べた？ひとこと聞かせて", "お昼の時間！みんなに近況をシェアしよう"],
+  ["ひと息つこう。いま何してる？", "午後の調子はどう？ちょっとつぶやいてみて", "休憩どう？思ったことを投稿してみよう"],
+  ["おつかれさま！今日はどんな日だった？", "夕方だよ。いま何を考えてる？", "帰り道に思ったこと、教えて"],
+  ["今日の終わりに、ひとこと投稿しよう", "おやすみ前に。今日いちばんよかったことは？", "夜だね。いま何を考えてる？"],
+];
+const JST = 9 * 3600e3;
+function nextNudge(now) {
+  const d = new Date(now + JST);
+  const base = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - JST;
+  for (let day = 0; day < 2; day++) for (const [h, m] of NUDGE_TIMES) {
+    const t = base + day * 864e5 + (h * 60 + m) * 6e4;
+    if (t > now + 5000) return t;
+  }
+  return now + 36e5;
+}
+// いまの時刻にいちばん近い（直前の）枠。10分より前なら -1
+function nudgeSlot(now) {
+  const d = new Date(now + JST);
+  const base = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - JST;
+  for (let i = 0; i < NUDGE_TIMES.length; i++) {
+    const t = base + (NUDGE_TIMES[i][0] * 60 + NUDGE_TIMES[i][1]) * 6e4;
+    if (now >= t - 6e4 && now < t + 6e5) return i;
+  }
+  return -1;
+}
+
 export class Hub extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     this.sql = ctx.storage.sql;
-    ctx.blockConcurrencyWhile(async () => this.init());
+    ctx.blockConcurrencyWhile(async () => {
+      this.init();
+      try {
+        if ((await ctx.storage.getAlarm()) === null) await ctx.storage.setAlarm(nextNudge(Date.now()));
+      } catch (e) {
+        console.error("alarm", String(e));
+      }
+    });
+  }
+
+  // 1日5回、みんなに「いま何してる？」を送る（日本時間）
+  async alarm() {
+    try {
+      this.sendNudges(nudgeSlot(Date.now()));
+    } catch (e) {
+      console.error("nudge", String(e));
+    } finally {
+      await this.ctx.storage.setAlarm(nextNudge(Date.now()));
+    }
+  }
+  sendNudges(slot, onlyUid) {
+    if (slot < 0) return 0;
+    const list = NUDGES[slot];
+    const users = onlyUid ? this.q("SELECT id FROM users WHERE id=?", onlyUid) : this.q("SELECT id FROM users WHERE nudge IS NULL OR nudge!=0");
+    users.forEach((u) => {
+      const msg = list[Math.floor(Math.random() * list.length)];
+      this.run("DELETE FROM notifs WHERE uid=? AND kind='nudge'", u.id);
+      this.run("INSERT INTO notifs(id,uid,kind,actor,gid,tid,peer,text,ts) VALUES(?,?,?,?,?,?,?,?,?)", rid(10), u.id, "nudge", "", null, null, null, msg, Date.now());
+      this.pushTo(u.id, "other", { t: "DARA", b: msg, u: "/", g: "nudge" });
+    });
+    return users.length;
   }
 
   init() {
@@ -139,6 +200,7 @@ export class Hub extends DurableObject {
       "ALTER TABLE users ADD COLUMN bio TEXT",
       "ALTER TABLE users ADD COLUMN hide_read INTEGER DEFAULT 0",
       "ALTER TABLE users ADD COLUMN animal INTEGER",
+      "ALTER TABLE users ADD COLUMN nudge INTEGER DEFAULT 1",
       "ALTER TABLE users ADD COLUMN recovery TEXT",
       "ALTER TABLE threads ADD COLUMN pinned INTEGER DEFAULT 0",
       "ALTER TABLE threads ADD COLUMN poll TEXT",
@@ -203,7 +265,7 @@ export class Hub extends DurableObject {
     const m = (req.headers.get("cookie") || "").match(/(?:^|;\s*)sr=([a-f0-9]{48})/);
     if (!m) return null;
     const s = this.one("SELECT uid FROM sessions WHERE tok=?", await sha(m[1]));
-    return s ? this.one("SELECT id,handle,name,color,avatar,bio,animal,hide_read FROM users WHERE id=?", s.uid) : null;
+    return s ? this.one("SELECT id,handle,name,color,avatar,bio,animal,hide_read,nudge FROM users WHERE id=?", s.uid) : null;
   }
 
   async startSession(uid) {
@@ -300,7 +362,7 @@ export class Hub extends DurableObject {
     return !!u && list.includes(u.handle);
   }
   selfOut(u) {
-    return u ? { ...pub(u), hideRead: !!u.hide_read, admin: this.isAdmin(u) } : null;
+    return u ? { ...pub(u), hideRead: !!u.hide_read, nudge: u.nudge !== 0, admin: this.isAdmin(u) } : null;
   }
   // どちらかがブロックしているか
   blockedPair(a, b) {
@@ -459,10 +521,11 @@ export class Hub extends DurableObject {
         const a = b.avatar === null ? null : this.ownImgs([b.avatar], me.id)[0] || null;
         this.run("UPDATE users SET avatar=? WHERE id=?", a, me.id);
       }
-      if (b.bio !== undefined) this.run("UPDATE users SET bio=? WHERE id=?", str(typeof b.bio === "string" ? b.bio.replace(/[\r\n]+/g, " ") : "", 80), me.id);
+      if (b.bio !== undefined) this.run("UPDATE users SET bio=? WHERE id=?", str(typeof b.bio === "string" ? b.bio : "", 20000), me.id);
       if (b.animal !== undefined) this.run("UPDATE users SET animal=? WHERE id=?", b.animal === null ? null : cInt(b.animal, 0, 15, 0), me.id);
+      if (b.nudge !== undefined) this.run("UPDATE users SET nudge=? WHERE id=?", b.nudge ? 1 : 0, me.id);
       if (b.hideRead !== undefined) this.run("UPDATE users SET hide_read=? WHERE id=?", b.hideRead ? 1 : 0, me.id);
-      return json({ me: this.selfOut(this.one("SELECT id,handle,name,color,avatar,bio,animal,hide_read FROM users WHERE id=?", me.id)) });
+      return json({ me: this.selfOut(this.one("SELECT id,handle,name,color,avatar,bio,animal,hide_read,nudge FROM users WHERE id=?", me.id)) });
     }
 
     // ---- パスワード ----
@@ -530,6 +593,38 @@ export class Hub extends DurableObject {
       const u = this.one("SELECT id,handle,name,color,avatar,bio,animal FROM users WHERE handle=?", m[1]);
       if (!u || this.blockedPair(me.id, u.id)) throw new HttpError(404, "not_found");
       return json({ user: pub(u), rel: this.relation(me.id, u.id), blocked: this.blockedByMe(me.id, u.id) });
+    }
+    // プロフィール（自分・友達・同じ部屋の人だけ見られる）
+    if ((m = path.match(/^\/api\/profile\/([A-Za-z0-9_-]{1,40})(\/posts)?$/)) && M === "GET") {
+      const u = this.one("SELECT id,handle,name,color,avatar,bio,animal FROM users WHERE id=?", m[1]);
+      if (!u || this.blockedPair(me.id, u.id)) throw new HttpError(404, "not_found");
+      const rel = this.relation(me.id, u.id);
+      const common = this.q("SELECT g.id id, g.name name FROM groups g JOIN gm a ON a.gid=g.id AND a.uid=? JOIN gm b ON b.gid=g.id AND b.uid=?", me.id, u.id);
+      if (rel === "none" && !common.length) throw new HttpError(404, "not_found");
+      if (!m[2]) {
+        const posts = this.one("SELECT COUNT(*) c FROM threads t JOIN gm ON gm.gid=t.gid AND gm.uid=? WHERE t.author=?", me.id, u.id).c;
+        const friends = this.one("SELECT COUNT(*) c FROM friends WHERE status='accepted' AND (a=? OR b=?)", u.id, u.id).c;
+        const groups = u.id === me.id ? this.one("SELECT COUNT(*) c FROM gm WHERE uid=?", me.id).c : common.length;
+        return json({ user: pub(u), rel, blocked: this.blockedByMe(me.id, u.id), counts: { posts, friends, groups }, common: u.id === me.id ? [] : common });
+      }
+      const before = Number(url.searchParams.get("before")) || Date.now() + 1;
+      const rows = this.q(
+        "SELECT t.*, g.name gname FROM threads t JOIN gm ON gm.gid=t.gid AND gm.uid=? JOIN groups g ON g.id=t.gid WHERE t.author=? AND t.ts<? ORDER BY t.ts DESC LIMIT 31",
+        me.id, u.id, before
+      );
+      const more = rows.length > 30;
+      const page = rows.slice(0, 30);
+      const rx = this.reactsFor(page.map((t) => t.id), me.id);
+      const threads = page.map((t) => ({
+        id: t.id, gid: t.gid, gname: t.gname, author: t.author, text: t.body, images: JSON.parse(t.imgs || "[]"), ts: t.ts, edited: t.edited || null, last: t.last, count: t.ccount,
+        pinned: !!t.pinned, poll: this.pollOut(t, me.id), reacts: rx[t.id] || [],
+      }));
+      return json({ threads, more, users: this.users([u.id, ...Object.values(rx).flat().flatMap((r) => r.u)]), stamps: this.stampMap(Object.values(rx).flat().map((r) => r.s)) });
+    }
+    // 管理者だけ：自分に「投稿してね」の通知を試し送り
+    if (path === "/api/nudge/test" && M === "POST") {
+      if (!this.isAdmin(me)) throw new HttpError(403, "forbidden");
+      return json({ sent: this.sendNudges(Math.max(0, nudgeSlot(Date.now())), me.id) });
     }
     if (path === "/api/friends" && M === "GET") {
       const rows = this.q("SELECT * FROM friends WHERE a=? OR b=?", me.id, me.id);
@@ -1180,7 +1275,7 @@ export class Hub extends DurableObject {
     const recovery = makeRecovery();
     this.run("UPDATE users SET recovery=? WHERE id=?", await sha("rc:" + normRecovery(recovery)), id);
     const cookie = await this.startSession(id);
-    return json({ me: this.selfOut(this.one("SELECT id,handle,name,color,avatar,bio,animal,hide_read FROM users WHERE id=?", id)), recovery }, 200, { "set-cookie": cookie });
+    return json({ me: this.selfOut(this.one("SELECT id,handle,name,color,avatar,bio,animal,hide_read,nudge FROM users WHERE id=?", id)), recovery }, 200, { "set-cookie": cookie });
   }
 
   async login(req) {
@@ -1220,6 +1315,6 @@ export class Hub extends DurableObject {
     this.run("UPDATE users SET pw=?, salt=?, recovery=? WHERE id=?", await pbkdf(pw, salt), salt, await sha("rc:" + normRecovery(code)), u.id);
     this.run("DELETE FROM sessions WHERE uid=?", u.id);
     const cookie = await this.startSession(u.id);
-    return json({ me: this.selfOut(this.one("SELECT id,handle,name,color,avatar,bio,animal,hide_read FROM users WHERE id=?", u.id)), recovery: code }, 200, { "set-cookie": cookie });
+    return json({ me: this.selfOut(this.one("SELECT id,handle,name,color,avatar,bio,animal,hide_read,nudge FROM users WHERE id=?", u.id)), recovery: code }, 200, { "set-cookie": cookie });
   }
 }
