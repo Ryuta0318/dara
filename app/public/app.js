@@ -1478,7 +1478,7 @@ function threadView(tid){
     if(!data) return;
     var t = data.thread, cs = data.comments;
     head.innerHTML = '';
-    head.appendChild(h('button', {type:'button', class:'back', text:'‹ ' + data.group.name, onclick:function(){ location.hash = '#/g/' + t.gid; }}));
+    head.appendChild(h('button', {type:'button', class:'back', 'aria-label':data.group.name + ' に戻る', onclick:function(){ location.hash = '#/g/' + t.gid; }}, h('span', {class:'chev', text:'‹'}), h('span', {class:'bname', text:data.group.name})));
     head.appendChild(refreshBtn(function(){ return load(true); }));
     postBox.innerHTML = '';
     var roomOwner = data.group.owner === st.me.id;
@@ -1574,7 +1574,7 @@ function dmView(peer){
   function draw(){
     if(!data) return;
     head.innerHTML = '';
-    head.appendChild(h('button', {type:'button', class:'back', text:'‹ DM', onclick:function(){ location.hash = '#/dm'; }}));
+    head.appendChild(h('button', {type:'button', class:'back', 'aria-label':'DM に戻る', onclick:function(){ location.hash = '#/dm'; }}, h('span', {class:'chev', text:'‹'}), h('span', {class:'bname', text:'DM'})));
     head.appendChild(h('div', {class:'dmhead'}, avatar(peer, 34), h('b', {text:user(peer).name})));
     var nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 140;
     list.innerHTML = '';
