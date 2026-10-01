@@ -266,7 +266,7 @@ function openRoomStyle(group, onSaved){
         b.style.transform = 'scale(' + k + ')'; wrap.style.height = Math.round(b.offsetHeight * k) + 'px';
       });
     }else if(mode === 'stage'){
-      var stg = A.stage(g, {}); stg.setAttribute('style', A.roomVars(g)); pvStage.appendChild(h('div', {class:'pvcard'}, stg));
+      var stg = A.stage(g, {vars:A.roomVars(g)}); pvStage.appendChild(h('div', {class:'pvcard'}, stg));
     }else pvStage.appendChild(h('div', {class:'pvcard'}, A.cardEl(g, {preview:true})));
     pvModes.innerHTML = '';
     pvModes.appendChild(h('span', {class:'pvcap', text:'完成イメージ'}));

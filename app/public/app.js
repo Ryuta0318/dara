@@ -193,16 +193,18 @@ function avatar(id, size){
   }
   return h('div', {class:'orb av pal' + pal + (pal === 3 ? ' p3' : ''), style:'--s:' + size + 'px', 'aria-hidden':'true'}, (u.name || '?').trim().charAt(0).toUpperCase());
 }
-function tilt(el){
+// 傾き + つやの動き（マウスなど、細かく指せる端末だけ）。k = 最大の傾き(度)
+function tilt3d(el, k){
+  if(!window.matchMedia || !window.matchMedia('(pointer: fine)').matches) return;
+  var sh = el.querySelector(':scope > .sheen');
   el.addEventListener('pointermove', function(e){
-    var r = el.getBoundingClientRect(), x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
-    el.style.setProperty('--ry', ((x - .5) * 16) + 'deg'); el.style.setProperty('--rx', ((.5 - y) * 16) + 'deg');
-    el.style.setProperty('--gx', (x * 100) + '%'); el.style.setProperty('--gy', (y * 100) + '%');
+    var r = el.getBoundingClientRect(), px = (e.clientX - r.left) / r.width - 0.5, py = (e.clientY - r.top) / r.height - 0.5;
+    el.style.transform = 'perspective(700px) rotateX(' + (-py * k).toFixed(2) + 'deg) rotateY(' + (px * k).toFixed(2) + 'deg)';
+    if(sh) sh.style.backgroundPositionX = (50 - px * 120).toFixed(1) + '%';
   });
-  el.addEventListener('pointerleave', function(){
-    el.style.setProperty('--rx', '0deg'); el.style.setProperty('--ry', '0deg'); el.style.setProperty('--gx', '30%'); el.style.setProperty('--gy', '20%');
-  });
+  el.addEventListener('pointerleave', function(){ el.style.transform = ''; if(sh) sh.style.backgroundPositionX = '50%'; });
 }
+function tilt(el){ tilt3d(el, 10); }
 function mountHero(box){
   var fb = h('img', {class:'fb', src:'/assets/dara-wordmark.png', alt:'DARA'});
   box.appendChild(fb);
@@ -515,7 +517,8 @@ function postEl(p, o){
     o.count !== undefined ? h('div', {class:'meta', text:'コメント ' + o.count}) : null,
     reactBar(p, o),
     o.extra || null);
-  var el = h('article', {class:'post' + (o.click ? ' tap' : '') + (o.big ? ' big' : '')}, avatar(p.author, 44), body);
+  var el = h('article', {class:'post' + (o.click ? ' tap' : '') + (o.big ? ' big' : '')}, h('div', {class:'sheen'}), avatar(p.author, 44), body);
+  tilt3d(el, 5.6);
   if(o.click){
     el.setAttribute('tabindex', '0'); el.setAttribute('role', 'button');
     el.addEventListener('click', o.click);
@@ -906,7 +909,8 @@ function roomCardEl(g, o){
   }
   var c = h('div', {class:cls, style:S.roomVars(g), role:o.preview || !o.onclick ? null : 'button', tabindex:o.preview || !o.onclick ? '-1' : '0',
       'aria-label':o.onclick ? g.name + ' に入る' : null, onclick:o.onclick || null},
-    h('div', {class:'wchar'}, window.DARAAnimal.forRoom(g, o.big ? 150 : 124, true)), info);
+    h('div', {class:'sheen'}), h('div', {class:'wchar'}, window.DARAAnimal.forRoom(g, o.big ? 150 : 146, true)), info);
+  if(!o.preview && !o.big) tilt3d(c, 10);
   if(o.big){
     var stack = h('div', {class:'rstack'});
     mem.slice(0, 5).forEach(function(id){ stack.appendChild(avatar(id, 30)); });
@@ -958,7 +962,7 @@ function homeView(tab){
       stamps:'<circle cx="12" cy="12" r="9"></circle><path d="M8.5 14c1 1.6 2.2 2.2 3.5 2.2s2.5-.6 3.5-2.2"></path><circle cx="9" cy="10" r=".7"></circle><circle cx="15" cy="10" r=".7"></circle>'};
     [['groups', '#/', '部屋'], ['friends', '#/friends', '友達'], ['dm', '#/dm', 'DM'], ['stamps', '#/stamps', 'スタンプ']].forEach(function(t){
       var ic = svgIcon(IC[t[0]], '24');
-      nav.appendChild(h('a', {href:t[1], class:'ntab' + (tab === t[0] ? ' on' : '')}, h('span', {class:'nic'}, ic, cnt[t[0]] ? h('span', {class:'dot', text:cnt[t[0]]}) : null), h('span', {class:'nl', text:t[2]})));
+      nav.appendChild(h('a', {href:t[1], 'aria-label':t[2], class:'ntab' + (tab === t[0] ? ' on' : '')}, h('span', {class:'nic'}, ic, cnt[t[0]] ? h('span', {class:'dot', text:cnt[t[0]]}) : null), h('span', {class:'nl', text:t[2]})));
     });
   }
   function drawGroups(){
@@ -1301,8 +1305,8 @@ function groupView(gid){
     fillBanner(banner, group, {onBack:function(){ location.hash = '#/'; }, onSearch:function(){ searchSheet(gid); }, onSettings:function(){ groupInfoSheet(gid, load); }});
     stageBox.innerHTML = '';
     if(typeof group.scene === 'number' || (group.decor || []).length){
-      var stg = window.DARAScene.stage(group, {});
-      stg.setAttribute('style', S.roomVars(group)); stageBox.appendChild(stg);
+      var stg = window.DARAScene.stage(group, {vars:S.roomVars(group)});
+      stageBox.appendChild(stg);
     }
     feed.innerHTML = '';
     if(!threads){ feed.appendChild(h('div', {class:'hint', style:'padding:16px 4px', text:'読み込み中'})); return; }

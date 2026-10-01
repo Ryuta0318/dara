@@ -808,3 +808,148 @@ mark{background:rgba(255,225,120,.35); color:inherit; border-radius:4px; padding
 .bigopt:active{transform:translateY(6px) !important; box-shadow:0 1px 0 var(--lip),0 3px 5px rgba(0,0,0,.45) !important}
 .nav{padding-bottom:10px}
 .ntab.on{box-shadow:0 3px 0 #050408,inset 0 2px 0 rgba(255,255,255,.35),inset 0 -5px 8px rgba(0,0,0,.4),inset 0 0 0 1.5px rgba(255,255,255,.2)}
+
+/* =====================================================================
+   パール・スラブ（3D デザイン）— 厚みのあるカード、押すと沈むボタン、くぼんだ入力欄
+   ===================================================================== */
+:root{--slab-dark:linear-gradient(#1f1e26,#15141a); --pearl-grad:radial-gradient(circle at 35% 30%,#fff,#e9e4f0 55%,#c9c1d8); --pearl-side:#9a92aa}
+body{font-family:"Zen Maru Gothic","Hiragino Maru Gothic ProN","Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP","Yu Gothic",Meiryo,sans-serif;
+  background:radial-gradient(120% 60% at 50% 0%,#1d1a26 0%,#050506 60%)}
+
+/* --- 背景の浮かぶ真珠 --- */
+.bgfx i{filter:blur(1.5px); opacity:.15; background:radial-gradient(circle at 32% 28%,#fff 0 6%,#efe9f6 22%,#c9c1d8 62%,#6f6880 100%); animation:pfloat 8.8s ease-in-out infinite}
+.bgfx i:nth-child(1){width:90px; height:90px; left:-40px; top:auto; bottom:160px; right:auto; opacity:.12; animation-delay:-3s}
+.bgfx i:nth-child(2){width:120px; height:120px; right:-30px; left:auto; top:120px; opacity:.18}
+.bgfx i:nth-child(3){width:64px; height:64px; right:18%; bottom:26%; left:auto; opacity:.12; animation-delay:-6s}
+@keyframes pfloat{0%,100%{transform:translateY(-9px)}50%{transform:translateY(9px)}}
+
+/* --- スラブ共通 --- */
+.sheen{position:absolute; inset:0; border-radius:inherit; pointer-events:none; z-index:3;
+  background:linear-gradient(115deg,transparent 35%,rgba(255,255,255,.45) 48%,transparent 60%); background-size:250% 100%; background-position:50% 0; mix-blend-mode:soft-light}
+
+/* --- 部屋カード --- */
+.glist{gap:26px; padding:6px 4px 30px}
+.pwrap{filter:none !important; perspective:none}
+.wcard{-webkit-mask:none !important; mask:none !important; display:block !important; position:relative; height:138px; min-height:0 !important; padding:0 !important; border-radius:30px !important; cursor:pointer;
+  background:linear-gradient(165deg,var(--l),var(--c)) !important;
+  box-shadow:inset 0 3px 1px rgba(255,255,255,.75),inset 0 -8px 14px rgba(0,0,0,.10),0 10px 0 var(--d),0 26px 30px rgba(0,0,0,.55) !important;
+  transform-style:preserve-3d; transition:transform .18s ease-out; animation:rise .55s cubic-bezier(.2,.9,.3,1.15) backwards}
+.wcard::after{display:none !important}
+.wcard:active{transform:translateY(6px) !important; box-shadow:inset 0 3px 1px rgba(255,255,255,.75),0 4px 0 var(--d),0 10px 14px rgba(0,0,0,.5) !important}
+.wcard .wchar{position:absolute; left:-4px; bottom:6px; width:146px; display:block; transform:translateZ(60px); z-index:2}
+.wcard .wchar .achar{width:146px !important}
+.wcard .wchar .achar img{filter:drop-shadow(0 16px 12px rgba(0,0,0,.35))}
+.wcard .winfo{position:absolute; left:146px; right:16px; top:18px; transform:translateZ(28px); z-index:2}
+.wcard .wname{font-size:21px; font-weight:900; line-height:1.15; color:#1b1a22}
+.wcard .wcount{font-size:13px; font-weight:700; opacity:.7; margin:2px 0 0; color:#1b1a22}
+.wcard .wlast{margin-top:8px; padding:7px 10px; border-radius:16px; background:rgba(255,255,255,.55); box-shadow:inset 0 1px 0 #fff,0 3px 0 rgba(0,0,0,.08); color:#1b1a22}
+.wcard .wl{font-size:11px; font-weight:700}
+.wcard .wl b{font-size:11px}
+.wcard .wt{font-size:12px; font-weight:500}
+.wcard.dk .wname,.wcard.dk .wcount,.wcard.dk .wlast{color:#fff}
+.wcard.dk .wlast{background:rgba(0,0,0,.3)}
+.wcard.big{height:auto !important; min-height:176px !important; display:grid !important; grid-template-columns:150px 1fr; align-items:center; padding:16px 18px 18px 8px !important}
+.wcard.big .wchar,.wcard.big .winfo{position:relative; left:auto; right:auto; top:auto; width:auto; transform:none}
+.wcard.big .wchar .achar{width:150px !important}
+.wcard.big .wname{font-size:30px}
+.wcard.preview{height:138px}
+.pvcard{filter:none !important; padding:2px 6px 30px !important}
+.wcard.preview.big{height:auto !important}
+.wchev{z-index:4}
+
+/* --- 部屋の舞台（スレッドの上）--- */
+.stagebox{margin:2px -16px 30px; filter:none !important}
+.stage{-webkit-mask:none !important; mask:none !important; aspect-ratio:auto !important; height:290px; border-radius:0 0 44px 44px !important;
+  box-shadow:inset 0 -10px 20px rgba(0,0,0,.12),0 10px 0 var(--side,#c96f93),0 24px 30px rgba(0,0,0,.5) !important}
+.pvcard .stage{height:auto !important; aspect-ratio:16/10 !important; border-radius:30px !important; box-shadow:inset 0 -10px 20px rgba(0,0,0,.12),0 8px 0 var(--side,#c96f93),0 18px 24px rgba(0,0,0,.5) !important}
+.stanimal{bottom:28px; animation:pfloat 8.8s ease-in-out infinite}
+.stanimal .achar{animation:none !important}
+.stanimal .achar img{filter:drop-shadow(0 18px 10px rgba(30,60,90,.35))}
+.stshadow{position:absolute; left:50%; bottom:22px; width:120px; height:20px; margin-left:-60px; border-radius:50%; background:rgba(40,70,100,.28); filter:blur(4px); z-index:1}
+.pvcard .stanimal{bottom:16px}.pvcard .stshadow{bottom:12px}
+
+/* --- 暗いスラブ（投稿・パネル・ナビ・小さなボタン）--- */
+.post,.panel,.nrow,.menurow,.dmhero,.pfStat,.sccell,.iconCell,.dmrow.row,.puffy-none{background:var(--slab-dark) !important; border-radius:26px !important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 7px 0 #000,0 18px 24px rgba(0,0,0,.5) !important}
+.post{position:relative; margin:0 0 24px !important; padding:13px 16px !important; transform-style:preserve-3d; transition:transform .18s ease-out}
+.post>*:not(.sheen){transform:translateZ(16px)}
+.post .pollbox,.post .rxbar{transform:translateZ(22px)}
+.panel{border-radius:26px !important; margin:0 0 22px !important}
+.nrow,.menurow{margin-bottom:20px !important; border-radius:22px !important; box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 5px 0 #000,0 12px 16px rgba(0,0,0,.45) !important}
+.nrow.new{background:linear-gradient(#2a2733,#1c1a23) !important}
+.dmrow.row{margin-bottom:14px; padding:10px 14px; border-radius:22px !important; box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 5px 0 #000,0 12px 16px rgba(0,0,0,.45) !important}
+.sccell,.iconCell{box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 5px 0 #000,0 10px 14px rgba(0,0,0,.4) !important; margin-bottom:6px}
+.sccell.on,.iconCell.on{outline:3px solid #ff8fb3; outline-offset:-3px}
+
+/* --- 下のバー --- */
+.nav{width:calc(100% - 36px) !important; max-width:564px; height:72px; bottom:calc(22px + env(safe-area-inset-bottom,0px)); padding:0 10px !important; border-radius:36px !important; align-items:center;
+  background:linear-gradient(#1f1e26,#121116) !important; backdrop-filter:none; -webkit-backdrop-filter:none;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 8px 0 #000,0 20px 30px rgba(0,0,0,.6) !important}
+.ntab{width:62px; height:52px; padding:0 !important; border-radius:26px !important; justify-content:center; color:rgba(255,255,255,.7); box-shadow:none !important; background:none}
+.ntab .nl{display:none}
+.ntab.on{color:#1b1a22 !important; background:linear-gradient(#ffc4d8,#f59bbd) !important; box-shadow:inset 0 2px 0 rgba(255,255,255,.7),0 4px 0 #c96f93 !important}
+.ntab.on::after{display:none}
+.ntab:active{transform:translateY(3px)}
+.ntab .dot{top:-4px; right:-6px}
+.page{padding-bottom:150px}
+
+/* --- 丸い小さなボタン（暗いスラブ）--- */
+.topbtn,.hbtn,.addbtn,.kebab{background:linear-gradient(#24222c,#141318) !important; box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 4px 0 #000 !important; border-radius:50% !important; transition:transform .08s ease-out,box-shadow .08s ease-out}
+.topbtn:active,.hbtn:active,.addbtn:active{transform:translateY(4px) !important; box-shadow:0 0 0 #000,0 3px 5px rgba(0,0,0,.5) !important}
+.topbtn .dot{background:#ff5fa8; box-shadow:0 0 8px #ff5fa8; min-width:9px; height:9px; width:9px; padding:0; font-size:0; top:8px; right:9px}
+.topbtn .dot:empty{display:block}
+.topbtn svg,.hbtn svg{filter:none}
+.roundplus{background:var(--pearl-grad) !important; box-shadow:0 5px 0 var(--pearl-side),0 12px 16px rgba(0,0,0,.5) !important; transition:transform .08s ease-out,box-shadow .08s ease-out}
+.roundplus:active{transform:translateY(5px) !important; box-shadow:0 0 0 var(--pearl-side),0 4px 6px rgba(0,0,0,.5) !important}
+
+/* --- パールのボタン（主な操作）--- */
+.b3{background:var(--pearl-grad) !important; color:#1b1a22; border-radius:999px; margin-bottom:12px;
+  box-shadow:0 6px 0 var(--pearl-side),0 12px 16px rgba(0,0,0,.5) !important; transition:transform .08s ease-out,box-shadow .08s ease-out}
+.b3::after{display:none !important}
+.b3:hover:not(:disabled){transform:none}
+.b3:active:not(:disabled){transform:translateY(5px) !important; box-shadow:0 0 0 var(--pearl-side),0 4px 6px rgba(0,0,0,.5) !important}
+.b3.soft{background:var(--slab-dark) !important; color:var(--ink); box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 5px 0 #000,0 12px 16px rgba(0,0,0,.5) !important}
+.b3.soft:active:not(:disabled){transform:translateY(4px) !important; box-shadow:0 0 0 #000,0 3px 5px rgba(0,0,0,.5) !important}
+.b3.red{background:linear-gradient(#ffb7aa,#ff8070) !important; color:#2b0a05; box-shadow:0 6px 0 #a63226,0 12px 16px rgba(0,0,0,.5) !important}
+.b3.sm{margin-bottom:8px}
+.nav .b3{margin:0}
+.mini{background:var(--pearl-grad) !important; color:#1b1a22; box-shadow:0 5px 0 var(--pearl-side),0 10px 14px rgba(0,0,0,.5) !important; transition:transform .08s ease-out,box-shadow .08s ease-out; margin-bottom:5px}
+.mini:active{transform:translateY(4px) !important; box-shadow:0 1px 0 var(--pearl-side) !important}
+.mini.soft{background:var(--slab-dark) !important; color:var(--ink); box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 4px 0 #000 !important}
+.pillbtn{background:var(--pearl-grad) !important; box-shadow:0 4px 0 var(--pearl-side),0 8px 12px rgba(0,0,0,.45) !important}
+.chip{background:var(--slab-dark) !important; box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 4px 0 #000 !important; margin-bottom:5px}
+.chip.on{background:linear-gradient(#ffc4d8,#f59bbd) !important; color:#1b1a22; box-shadow:inset 0 2px 0 rgba(255,255,255,.7),0 4px 0 #c96f93 !important}
+.seg.on{background:var(--pearl-grad) !important; box-shadow:0 4px 0 var(--pearl-side) !important}
+.segtabs{background:#0b0a0e; box-shadow:inset 0 3px 8px rgba(0,0,0,.9),inset 0 -1px 0 rgba(255,255,255,.1)}
+.puffy{box-shadow:inset 0 2px 0 rgba(255,255,255,.8),0 6px 0 var(--lip),0 12px 16px rgba(0,0,0,.45) !important}
+.puffy.lav{--lip:#7c6fb0}.puffy.pink{--lip:#c96f93}.puffy.sky{--lip:#5f8fd0}
+.bigopt{box-shadow:inset 0 2px 0 rgba(255,255,255,.8),0 8px 0 var(--lip),0 16px 20px rgba(0,0,0,.45) !important}
+.bigopt.pink{background:linear-gradient(165deg,#ffd1e3,#f59bbd); --lip:#c96f93}.bigopt.blue{background:linear-gradient(165deg,#d8e4ff,#9cc3f5); --lip:#5f8fd0}
+
+/* --- リアクションのチップ --- */
+.rx{background:var(--slab-dark) !important; box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 4px 0 #000 !important; margin-bottom:5px; transition:transform .08s ease-out,box-shadow .08s ease-out}
+.rx:active{transform:translateY(4px) !important; box-shadow:0 0 0 #000 !important}
+.rx.me{background:linear-gradient(#ffc4d8,#f59bbd) !important; color:#1b1a22; box-shadow:inset 0 2px 0 rgba(255,255,255,.7),0 4px 0 #c96f93 !important}
+
+/* --- くぼんだ入力欄 --- */
+.field,.sbox,.ta,.entry,.comp,.codepill,.code{background:#0b0a0e !important; box-shadow:inset 0 3px 8px rgba(0,0,0,.9),inset 0 -1px 0 rgba(255,255,255,.1) !important}
+.comp{border-radius:30px}
+.comp .ta{box-shadow:none !important}
+.entry{border-radius:999px}
+.field:focus,.sfield:focus{box-shadow:inset 0 3px 8px rgba(0,0,0,.9),0 0 0 3px rgba(255,166,209,.45) !important; transform:none}
+
+/* --- DM の吹き出し --- */
+.dm .bub{background:var(--slab-dark); color:var(--ink); box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 4px 0 #000,0 10px 12px rgba(0,0,0,.4); margin-bottom:6px}
+.dm.me .bub{background:linear-gradient(#ffc4d8,#f59bbd); color:#1b1a22; box-shadow:inset 0 2px 0 rgba(255,255,255,.7),0 4px 0 #c96f93,0 10px 12px rgba(0,0,0,.4)}
+
+/* --- ログイン・新規登録 --- */
+.auth .b3.block{height:58px; font-size:18px; font-weight:900; margin-top:6px}
+.authHead{font-weight:900}
+.sheet{background:linear-gradient(#17161d,#0f0e13); box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 -14px 50px rgba(0,0,0,.7)}
+.rhead{background:rgba(5,5,6,.9)}
+.rhead .hico{box-shadow:inset 0 3px 0 rgba(255,255,255,.75),0 4px 0 var(--d,#c96f93)}
+.avanimal{box-shadow:inset 0 2px 0 rgba(255,255,255,.7),0 3px 0 var(--d,#c96f93)}
+.wcard .wchar{width:132px; bottom:10px}
+.wcard .wchar .achar{width:132px !important}
+.wcard .winfo{left:134px}
+.glist{padding-top:34px}

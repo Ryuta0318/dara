@@ -3,14 +3,14 @@
 'use strict';
 var A = window.DARAAnimal;
 var SCENES = [
-  {k:'room',   n:'ふわふわ部屋', bg:'linear-gradient(#ffd6e8,#ffb9d4 60%,#f59bbd)', ground:'#f7a9c6', em:'☁'},
-  {k:'forest', n:'森',          bg:'linear-gradient(#cdeccb,#9fd9a6 55%,#5fb27a)', ground:'#6fbf86', em:'🌲'},
-  {k:'sea',    n:'海',          bg:'linear-gradient(#bfe6ff,#8fd0f5 55%,#4aa9e0)', ground:'#f7e3b5', em:'🌊'},
-  {k:'space',  n:'宇宙',        bg:'linear-gradient(#2a1f5c,#3d2f8a 60%,#6a4cc4)', ground:'#4a3a9a', em:'✦'},
-  {k:'snow',   n:'雪',          bg:'linear-gradient(#e8f2ff,#cfe3fb 60%,#aecbf0)', ground:'#f4f9ff', em:'❄'},
-  {k:'sky',    n:'そら',        bg:'linear-gradient(#bfe0ff,#e4f1ff 60%,#fff3e0)', ground:'#ffffff', em:'☁'},
-  {k:'candy',  n:'おかし',      bg:'linear-gradient(#ffe3f3,#ffd2e8 60%,#ffbcdd)', ground:'#ffc6e2', em:'🍭'},
-  {k:'night',  n:'よるの街',    bg:'linear-gradient(#1b1b3a,#2c2c5e 60%,#4a3f7a)', ground:'#34346a', em:'🌙'}
+  {k:'room', side:'#c96f93',   n:'ふわふわ部屋', bg:'linear-gradient(#ffd6e8,#ffb9d4 60%,#f59bbd)', ground:'#f7a9c6', em:'☁'},
+  {k:'forest', side:'#4fa983', n:'森',          bg:'linear-gradient(#cdeccb,#9fd9a6 55%,#5fb27a)', ground:'#6fbf86', em:'🌲'},
+  {k:'sea', side:'#2f7fb3',    n:'海',          bg:'linear-gradient(#bfe6ff,#8fd0f5 55%,#4aa9e0)', ground:'#f7e3b5', em:'🌊'},
+  {k:'space', side:'#2a1f63',  n:'宇宙',        bg:'linear-gradient(#2a1f5c,#3d2f8a 60%,#6a4cc4)', ground:'#4a3a9a', em:'✦'},
+  {k:'snow', side:'#7fa0c9',   n:'雪',          bg:'linear-gradient(#e8f2ff,#cfe3fb 60%,#aecbf0)', ground:'#f4f9ff', em:'❄'},
+  {k:'sky', side:'#6aa0d8',    n:'そら',        bg:'linear-gradient(#bfe0ff,#e4f1ff 60%,#fff3e0)', ground:'#ffffff', em:'☁'},
+  {k:'candy', side:'#d96aa4',  n:'おかし',      bg:'linear-gradient(#ffe3f3,#ffd2e8 60%,#ffbcdd)', ground:'#ffc6e2', em:'🍭'},
+  {k:'night', side:'#2a2860',  n:'よるの街',    bg:'linear-gradient(#1b1b3a,#2c2c5e 60%,#4a3f7a)', ground:'#34346a', em:'🌙'}
 ];
 var DECORS = [
   {k:'sofa',     n:'ソファ',     em:'🛋'},
@@ -41,6 +41,7 @@ function stage(g, o){
   o = o || {};
   var sc = sceneOf(g), el = document.createElement('div');
   el.className = 'stage' + (sc ? ' has' : '') + (o.compact ? ' compact' : '');
+  el.style.cssText = (o.vars || '') + ';--side:' + (sc ? sc.side : '#c96f93');
   var bg = document.createElement('div'); bg.className = 'stbg';
   if(sc){
     bg.style.background = sc.bg;
@@ -59,7 +60,8 @@ function stage(g, o){
     el.appendChild(it);
   });
   var an = document.createElement('div'); an.className = 'stanimal';
-  an.appendChild(A.forRoom(g, o.compact ? 96 : 128, true));
+  an.appendChild(A.forRoom(g, o.compact ? 96 : 170, true));
+  var sd = document.createElement('i'); sd.className = 'stshadow'; el.appendChild(sd);
   el.appendChild(an);
   return el;
 }
