@@ -44,7 +44,7 @@ function stage(g, o){
   var bg = document.createElement('div'); bg.className = 'stbg';
   if(sc){
     bg.style.background = sc.bg;
-    bg.innerHTML = '<i class="stground" style="background:' + sc.ground + '"></i><span class="stem">' + sc.em + '</span>';
+    bg.innerHTML = window.DARAArt.scene(sc.k);
     var url = '/scenes/' + sc.k + '.webp?v=1';
     probe(url, function(good){ if(good){ bg.innerHTML = ''; bg.style.background = 'url(' + url + ') center/cover'; } });
   }else bg.style.background = 'radial-gradient(circle at 30% 20%,var(--l),var(--c) 70%,var(--d))';
@@ -53,7 +53,7 @@ function stage(g, o){
     var d = DECORS[i]; if(!d) return;
     var s = SLOTS[n], it = document.createElement('div'); it.className = 'stdecor';
     ['l', 'r', 't', 'b', 'w'].forEach(function(p){ if(s[p]) it.style[p === 'l' ? 'left' : p === 'r' ? 'right' : p === 't' ? 'top' : p === 'b' ? 'bottom' : 'width'] = s[p]; });
-    it.innerHTML = '<span class="dem">' + d.em + '</span>';
+    it.innerHTML = window.DARAArt.decor(d.k);
     var url = '/decor/' + d.k + '.webp?v=1';
     probe(url, function(good){ if(good){ it.innerHTML = '<img alt="" draggable="false" src="' + url + '">'; } });
     el.appendChild(it);

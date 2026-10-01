@@ -239,6 +239,8 @@ function openPicker(onPick, opts){
 function oneMap(st){ var m = {}; m[st.id] = st.spec; return m; }
 
 /* ---- 部屋の見た目 ---- */
+function scThumb(k){ var i = h('i', {class:'scth'}); i.innerHTML = window.DARAArt.scene(k); return i; }
+function decThumb(k){ var i = h('i', {class:'scth deco'}); i.innerHTML = window.DARAArt.decor(k); return i; }
 var ACOLORS = ['#ffffff', '#ffd1e3', '#cfe0ff', '#c9f2df', '#fff0a8', '#e2d2ff', '#ffd9bd', '#d3d3d9'];
 function openRoomStyle(group, onSaved){
   var A = ui();
@@ -315,7 +317,7 @@ function openRoomStyle(group, onSaved){
       grid.appendChild(h('button', {type:'button', class:'sccell' + (cur.scene === null ? ' on' : ''), onclick:function(){ cur.scene = null; draw(); drawTabs(); }}, h('i', {class:'scth none'}), h('small', {text:'なし'})));
       window.DARAScene.SCENES.forEach(function(sc, i){
         grid.appendChild(h('button', {type:'button', class:'sccell' + (cur.scene === i ? ' on' : ''), onclick:function(){ cur.scene = i; draw(); drawTabs(); }},
-          h('i', {class:'scth', style:'background:' + sc.bg}, h('span', {text:sc.em})), h('small', {text:sc.n})));
+          scThumb(sc.k), h('small', {text:sc.n})));
       });
       pane.appendChild(grid);
     }
@@ -329,7 +331,7 @@ function openRoomStyle(group, onSaved){
           else if(cur.decor.length < 4) cur.decor = cur.decor.concat([i]);
           else { A.toast('かざりは4つまでです'); return; }
           draw(); drawTabs();
-        }}, h('i', {class:'scth deco'}, h('span', {text:d.em})), h('small', {text:d.n})));
+        }}, decThumb(d.k), h('small', {text:d.n})));
       });
       pane.appendChild(dg);
     }

@@ -775,3 +775,36 @@ mark{background:rgba(255,225,120,.35); color:inherit; border-radius:4px; padding
 .ntab.on{background:linear-gradient(rgba(255,255,255,.14),rgba(255,255,255,.04)); box-shadow:inset 0 2px 0 rgba(255,255,255,.25),inset 0 0 0 1px rgba(255,255,255,.1)}
 .rhead .hico,.avanimal{box-shadow:inset 0 3px 0 rgba(255,255,255,.75),inset 0 -6px 10px rgba(0,0,0,.18),0 6px 12px rgba(0,0,0,.4)}
 .puffy{box-shadow:inset 0 3px 0 rgba(255,255,255,.9),inset 0 -9px 14px rgba(0,0,0,.14),0 12px 18px rgba(0,0,0,.45)}
+.stbg svg{position:absolute; inset:0; width:100%; height:100%}
+.stdecor svg{width:100%; height:auto; overflow:visible}
+.scth{overflow:hidden; position:relative; width:64px; height:44px; border-radius:16px}
+.scth svg{position:absolute; inset:0; width:100%; height:100%}
+.scth.deco svg{position:static; padding:4px}
+
+/* ===== 立体ボタン：下に「ふち」を付けて、押すと沈む ===== */
+.b3{--lip:#b494c9; margin-bottom:9px; transform:translateY(0);
+  box-shadow:0 6px 0 var(--lip),0 15px 18px rgba(0,0,0,.5),inset 0 3px 0 #fff,inset 0 -9px 14px rgba(255,150,210,.32),inset 0 0 0 1.5px rgba(255,255,255,.75) !important}
+.b3:hover:not(:disabled){transform:translateY(-1px)}
+.b3:active:not(:disabled){transform:translateY(5px); box-shadow:0 1px 0 var(--lip),0 4px 6px rgba(0,0,0,.5),inset 0 4px 10px rgba(150,100,180,.45),inset 0 0 0 1.5px rgba(255,255,255,.6) !important}
+.b3.soft{--lip:#050408; color:var(--ink);
+  box-shadow:0 6px 0 var(--lip),0 14px 18px rgba(0,0,0,.6),inset 0 2px 0 rgba(255,255,255,.4),inset 0 -9px 14px rgba(0,0,0,.5),inset 0 0 0 1.5px rgba(255,255,255,.22) !important}
+.b3.soft:active:not(:disabled){box-shadow:0 1px 0 var(--lip),0 3px 5px rgba(0,0,0,.6),inset 0 4px 10px rgba(0,0,0,.6),inset 0 0 0 1.5px rgba(255,255,255,.15) !important}
+.b3.red{--lip:#a63226}
+.b3.sm{margin-bottom:7px}
+.nav .b3,.ntab{margin-bottom:0}
+.mini,.roundplus,.pillbtn{--lip:#b494c9; box-shadow:0 4px 0 var(--lip),0 10px 14px rgba(0,0,0,.5),inset 0 3px 0 #fff,inset 0 -6px 9px rgba(255,150,210,.3),inset 0 0 0 1.5px rgba(255,255,255,.7) !important; transform:translateY(0); transition:transform .12s,box-shadow .12s}
+.mini:active,.roundplus:active,.pillbtn:active{transform:translateY(3px) !important; box-shadow:0 1px 0 var(--lip),0 3px 5px rgba(0,0,0,.5),inset 0 3px 8px rgba(150,100,180,.45) !important}
+.mini.soft,.chip,.topbtn,.hbtn,.addbtn,.seg,.kebab{--lip:#050408; box-shadow:0 4px 0 var(--lip),0 9px 12px rgba(0,0,0,.5),inset 0 2px 0 rgba(255,255,255,.4),inset 0 -6px 9px rgba(0,0,0,.45),inset 0 0 0 1.5px rgba(255,255,255,.2) !important; transition:transform .12s,box-shadow .12s}
+.mini.soft:active,.chip:active,.topbtn:active,.hbtn:active,.addbtn:active{transform:translateY(3px); box-shadow:0 1px 0 var(--lip),0 2px 4px rgba(0,0,0,.5),inset 0 3px 8px rgba(0,0,0,.6) !important}
+.chip.on,.seg.on{--lip:#b494c9; box-shadow:0 4px 0 var(--lip),0 9px 12px rgba(0,0,0,.45),inset 0 3px 0 #fff,inset 0 -6px 9px rgba(255,150,210,.3),inset 0 0 0 1.5px rgba(255,255,255,.7) !important; color:#17131f}
+.seg{box-shadow:none !important; background:none}
+.seg.on{background:linear-gradient(#fffdf9,#eadcf0)}
+.segtabs{padding:6px 6px 9px}
+.puffy{--lip:#9a82c8; box-shadow:0 6px 0 var(--lip),0 13px 16px rgba(0,0,0,.45),inset 0 3px 0 rgba(255,255,255,.95),inset 0 -9px 14px rgba(0,0,0,.12) !important; margin-bottom:8px; transition:transform .12s,box-shadow .12s}
+.puffy.pink{--lip:#d9709f}.puffy.sky{--lip:#6a9fe0}.puffy.lav{--lip:#9a82c8}
+.puffy:active{transform:translateY(5px) !important; box-shadow:0 1px 0 var(--lip),0 3px 5px rgba(0,0,0,.45),inset 0 4px 10px rgba(0,0,0,.2) !important}
+.bigopt{box-shadow:0 7px 0 var(--lip),0 14px 18px rgba(0,0,0,.45),inset 0 3px 0 rgba(255,255,255,.9) !important; margin-bottom:16px; transition:transform .12s,box-shadow .12s}
+.bigopt.pink{--lip:#d9709f}.bigopt.blue{--lip:#6a9fe0}
+.bigopt:active{transform:translateY(6px) !important; box-shadow:0 1px 0 var(--lip),0 3px 5px rgba(0,0,0,.45) !important}
+.nav{padding-bottom:10px}
+.ntab.on{box-shadow:0 3px 0 #050408,inset 0 2px 0 rgba(255,255,255,.35),inset 0 -5px 8px rgba(0,0,0,.4),inset 0 0 0 1.5px rgba(255,255,255,.2)}
