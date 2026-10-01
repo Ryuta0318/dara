@@ -51,6 +51,22 @@ function cut(img, T, size){
     if(xx > 0) stack.push(k - 1); if(xx < w - 1) stack.push(k + 1);
     if(k >= w) stack.push(k - w); if(k < n - w) stack.push(k + w);
   }
+  // キャラの手足の間の細いすき間は「背景」ではなく影なので、背景からはずす（閉じる処理）
+  var r = Math.max(3, Math.round(Math.max(w, h) * 0.007));
+  function boxCount(src, rr){
+    var W = w + 1, S = new Int32Array(W * (h + 1));
+    for(var y = 0; y < h; y++){ var run = 0; for(var x = 0; x < w; x++){ run += src[y * w + x]; S[(y + 1) * W + x + 1] = S[y * W + x + 1] + run; } }
+    var out = new Int32Array(n);
+    for(var y2 = 0; y2 < h; y2++) for(var x2 = 0; x2 < w; x2++){
+      var x0 = Math.max(0, x2 - rr), x1 = Math.min(w, x2 + rr + 1), y0 = Math.max(0, y2 - rr), y1 = Math.min(h, y2 + rr + 1);
+      out[y2 * w + x2] = S[y1 * W + x1] - S[y0 * W + x1] - S[y1 * W + x0] + S[y0 * W + x0];
+    }
+    return out;
+  }
+  var F = new Uint8Array(n); for(var f = 0; f < n; f++) F[f] = bg[f] ? 0 : 1;
+  var dc = boxCount(F, r), D = new Uint8Array(n); for(var f2 = 0; f2 < n; f2++) D[f2] = dc[f2] > 0 ? 1 : 0;
+  var ec = boxCount(D, r), side = (2 * r + 1) * (2 * r + 1);
+  for(var f3 = 0; f3 < n; f3++){ if(bg[f3] && ec[f3] >= side) bg[f3] = 0; }
   // 背景に接する縁は、明るさに応じてやわらかく透明にする
   var minX = w, minY = h, maxX = 0, maxY = 0;
   for(var y = 0; y < h; y++) for(var xq = 0; xq < w; xq++){

@@ -720,3 +720,58 @@ mark{background:rgba(255,225,120,.35); color:inherit; border-radius:4px; padding
 .dm .bub{background:#2a2733; border-radius:22px 22px 22px 6px; padding:10px 14px}
 .dm.me .bub{background:linear-gradient(#e6dcff,#cdbcf7); color:#1b1626; border-radius:22px 22px 6px 22px}
 .dmhead b{font-size:17px}
+
+/* ===== 部屋の舞台（背景・デコ・どうぶつ）===== */
+.stagebox{margin:0 0 10px}
+.stage{--c:#ffa6cc; --l:#ffe0ee; --d:#e0709f; position:relative; aspect-ratio:16/10; border-radius:34px; overflow:hidden;
+  box-shadow:inset 0 3px 0 rgba(255,255,255,.7),inset 0 -12px 22px rgba(0,0,0,.18),0 18px 34px -12px rgba(0,0,0,.7); animation:fadein .5s ease backwards}
+.stage.compact{aspect-ratio:16/8}
+.stbg{position:absolute; inset:0}
+.stground{position:absolute; left:-10%; right:-10%; bottom:-30%; height:58%; border-radius:50%; opacity:.9}
+.stem{position:absolute; right:8%; top:8%; font-size:34px; opacity:.55; animation:floaty 4s ease-in-out infinite}
+.stanimal{position:absolute; left:50%; bottom:4%; transform:translateX(-50%); z-index:2}
+.stdecor{position:absolute; z-index:1; display:flex; justify-content:center; animation:pop .5s cubic-bezier(.3,1.6,.5,1) backwards}
+.stdecor img{width:100%; height:auto; filter:drop-shadow(0 8px 10px rgba(40,20,60,.35))}
+.stdecor .dem{font-size:clamp(36px,12vw,64px); filter:drop-shadow(0 6px 8px rgba(40,20,60,.35)); line-height:1}
+.scgrid{display:grid; grid-template-columns:repeat(4,1fr); gap:10px}
+.sccell{display:flex; flex-direction:column; align-items:center; gap:6px; padding:8px 4px; border-radius:20px; background:var(--card); box-shadow:inset 0 0 0 1px var(--line); cursor:pointer}
+.sccell.on{box-shadow:inset 0 0 0 2.5px #ff8fb3}
+.sccell small{font-size:11px; font-weight:800; color:var(--sub)}
+.scth{width:56px; height:56px; border-radius:18px; display:grid; place-items:center; font-style:normal; font-size:24px; box-shadow:inset 0 2px 0 rgba(255,255,255,.6)}
+.scth.none{background:repeating-conic-gradient(#2a2733 0 25%,#1c1a22 0 50%) 0 0/14px 14px}
+.scth.deco{background:rgba(255,255,255,.08)}
+
+/* ===== ぷにぷにの枠（まくら形）に統一 ===== */
+:root{--puni:url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 200 100%22 preserveAspectRatio=%22none%22%3E%3Cpath d=%22M34 2C70 9 130 9 166 2C190 -1 202 14 199 36C196 55 196 68 200 82C202 97 188 101 164 98C130 92 70 92 36 98C12 101 -2 96 1 80C4 64 4 52 1 36C-2 14 10 -1 34 2Z%22 fill=%22%23000%22/%3E%3C/svg%3E")}
+.pwrap{position:relative; filter:drop-shadow(0 14px 14px rgba(0,0,0,.5)) drop-shadow(0 0 22px var(--glow,rgba(255,170,210,.12)))}
+.wcard,.stage{-webkit-mask:var(--puni) 0 0/100% 100% no-repeat; mask:var(--puni) 0 0/100% 100% no-repeat; border-radius:0; box-shadow:none}
+.wcard{padding:18px 20px 18px 12px; min-height:158px;
+  background:radial-gradient(90% 55% at 24% 6%,rgba(255,255,255,.9),rgba(255,255,255,0) 60%),radial-gradient(70% 40% at 80% 100%,rgba(0,0,0,.14),rgba(0,0,0,0)),linear-gradient(172deg,var(--l) 0%,var(--c) 55%,var(--d) 150%)}
+.wcard::after{content:""; position:absolute; left:8%; top:4%; width:34%; height:14%; border-radius:50%; background:linear-gradient(rgba(255,255,255,.85),rgba(255,255,255,0)); transform:rotate(-6deg); pointer-events:none}
+.wcard.big{min-height:190px}
+.stagebox,.pvcard{filter:drop-shadow(0 14px 14px rgba(0,0,0,.5))}
+.stage{aspect-ratio:16/10}
+.wchev{z-index:2}
+.glist{gap:6px}
+.panel,.post,.pfStat,.nrow,.menurow,.dmhero,.sccell,.iconCell{border-radius:30px 34px 30px 34px / 28px 30px 32px 30px; box-shadow:inset 0 2px 0 rgba(255,255,255,.14),inset 0 -6px 10px rgba(0,0,0,.25),inset 0 0 0 1px var(--line),0 8px 16px rgba(0,0,0,.35)}
+.sheet{border-radius:44px 44px 0 0 / 38px 38px 0 0}
+.sbox,.entry{box-shadow:inset 0 3px 6px rgba(0,0,0,.45),inset 0 0 0 1px var(--line),0 1px 0 rgba(255,255,255,.08)}
+
+/* ===== ボタンの立体感 ===== */
+.b3{--top:#fffdf9; --mid:#f3e7f1; --bot:#dccbe3;
+  background:radial-gradient(120% 90% at 30% 0%,rgba(255,255,255,.95),rgba(255,255,255,0) 55%),linear-gradient(180deg,var(--top) 0%,var(--mid) 55%,var(--bot) 100%);
+  box-shadow:inset 0 3px 0 #fff,inset 0 -9px 14px rgba(170,130,190,.45),inset 0 0 0 1px rgba(255,255,255,.55),0 12px 20px rgba(0,0,0,.5),0 0 20px rgba(255,205,235,.16) !important;
+  transition:transform .18s cubic-bezier(.2,1.5,.4,1),box-shadow .2s}
+.b3:hover:not(:disabled){transform:translateY(-2px)}
+.b3:active:not(:disabled){transform:translateY(2px) scale(.96,.92); box-shadow:inset 0 2px 6px rgba(150,110,170,.55),inset 0 0 0 1px rgba(255,255,255,.4),0 3px 6px rgba(0,0,0,.6) !important}
+.b3.soft{--top:#3a3646; --mid:#26232f; --bot:#17151e; color:var(--ink);
+  background:radial-gradient(120% 90% at 30% 0%,rgba(255,255,255,.28),rgba(255,255,255,0) 55%),linear-gradient(180deg,var(--top),var(--mid) 55%,var(--bot));
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.28),inset 0 -8px 12px rgba(0,0,0,.45),inset 0 0 0 1px rgba(255,255,255,.12),0 10px 18px rgba(0,0,0,.5) !important}
+.b3.red{--top:#ffc3b8; --mid:#ff8576; --bot:#d9503f}
+.mini,.chip,.topbtn,.roundplus,.addbtn,.hbtn{box-shadow:inset 0 2px 0 rgba(255,255,255,.3),inset 0 -5px 8px rgba(0,0,0,.35),inset 0 0 0 1px rgba(255,255,255,.12),0 8px 14px rgba(0,0,0,.4)}
+.mini:not(.soft),.roundplus,.pillbtn{box-shadow:inset 0 3px 0 #fff,inset 0 -7px 10px rgba(170,130,190,.4),0 10px 16px rgba(0,0,0,.45) !important}
+.chip.on{background:linear-gradient(#fffdf9,#e3d3ee); color:#17131f; box-shadow:inset 0 2px 0 #fff,inset 0 -5px 8px rgba(170,130,190,.4),0 6px 12px rgba(0,0,0,.4)}
+.nav{box-shadow:inset 0 2px 0 rgba(255,255,255,.2),inset 0 -8px 14px rgba(0,0,0,.4),0 18px 36px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.1)}
+.ntab.on{background:linear-gradient(rgba(255,255,255,.14),rgba(255,255,255,.04)); box-shadow:inset 0 2px 0 rgba(255,255,255,.25),inset 0 0 0 1px rgba(255,255,255,.1)}
+.rhead .hico,.avanimal{box-shadow:inset 0 3px 0 rgba(255,255,255,.75),inset 0 -6px 10px rgba(0,0,0,.18),0 6px 12px rgba(0,0,0,.4)}
+.puffy{box-shadow:inset 0 3px 0 rgba(255,255,255,.9),inset 0 -9px 14px rgba(0,0,0,.14),0 12px 18px rgba(0,0,0,.45)}

@@ -131,6 +131,8 @@ export class Hub extends DurableObject {
       "ALTER TABLE groups ADD COLUMN locked INTEGER DEFAULT 0",
       "ALTER TABLE groups ADD COLUMN animal INTEGER",
       "ALTER TABLE groups ADD COLUMN last_uid TEXT",
+      "ALTER TABLE groups ADD COLUMN scene INTEGER",
+      "ALTER TABLE groups ADD COLUMN decor TEXT",
       "ALTER TABLE groups ADD COLUMN acolor TEXT",
       "ALTER TABLE threads ADD COLUMN edited INTEGER",
       "ALTER TABLE comments ADD COLUMN edited INTEGER",
@@ -349,7 +351,12 @@ export class Hub extends DurableObject {
     try {
       decos = JSON.parse(g.deco || "[]");
     } catch {}
+    let decor = [];
+    try {
+      decor = (JSON.parse(g.decor || "[]") || []).filter((x) => Number.isInteger(x) && x >= 0 && x < 16).slice(0, 4);
+    } catch {}
     return {
+      scene: g.scene === null || g.scene === undefined ? null : g.scene, decor,
       face: g.face || 0, shape: g.shape || 0, ccolor: g.ccolor || null, pattern: g.pattern || 0, desc: g.descr || "",
       decos, banner: g.banner || null, tfont: g.tfont || 0, animal: g.animal === null || g.animal === undefined ? null : g.animal, acolor: g.acolor || null, owner: g.owner, locked: !!g.locked,
     };
@@ -641,6 +648,8 @@ export class Hub extends DurableObject {
       if (b.ccolor !== undefined) put("ccolor", b.ccolor === null ? null : HEX.test(String(b.ccolor)) ? String(b.ccolor).toLowerCase() : null);
       if (b.face !== undefined) put("face", cInt(b.face, 0, 11, 0));
       if (b.shape !== undefined) put("shape", cInt(b.shape, 0, 7, 0));
+      if (b.scene !== undefined) put("scene", b.scene === null ? null : cInt(b.scene, 0, 15, 0));
+      if (b.decor !== undefined) put("decor", JSON.stringify((Array.isArray(b.decor) ? b.decor : []).filter((x) => Number.isInteger(x) && x >= 0 && x < 16).slice(0, 4)));
       if (b.animal !== undefined) put("animal", b.animal === null ? null : cInt(b.animal, 0, 15, 0));
       if (b.acolor !== undefined) put("acolor", b.acolor === null ? null : HEX.test(String(b.acolor)) ? String(b.acolor).toLowerCase() : null);
       if (b.pattern !== undefined) put("pattern", cInt(b.pattern, 0, 4, 0));

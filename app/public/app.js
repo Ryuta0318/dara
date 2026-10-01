@@ -266,7 +266,7 @@ function lightbox(src){
   overlay.appendChild(lb);
 }
 
-window.DARAUI = {fillBanner:function(){ return fillBanner.apply(null, arguments); }, cardEl:function(){ return roomCardEl.apply(null, arguments); }, shrinkAs:shrinkAs, uploadRaw:uploadRaw, h:h, api:api, toast:toast, openSheet:openSheet, askConfirm:askConfirm, errMsg:errMsg, cacheStamps:cacheStamps, stampCache:function(){ return st.stamps; }};
+window.DARAUI = {fillBanner:function(){ return fillBanner.apply(null, arguments); }, stage:function(){ return window.DARAScene.stage.apply(null, arguments); }, roomVars:function(g){ return S.roomVars(g); }, cardEl:function(){ return roomCardEl.apply(null, arguments); }, shrinkAs:shrinkAs, uploadRaw:uploadRaw, h:h, api:api, toast:toast, openSheet:openSheet, askConfirm:askConfirm, errMsg:errMsg, cacheStamps:cacheStamps, stampCache:function(){ return st.stamps; }};
 
 /* ---------- images ---------- */
 function shrink(file, max, q, mime){
@@ -914,7 +914,7 @@ function roomCardEl(g, o){
     info.appendChild(stack);
   }
   if(o.onclick && !o.preview) c.addEventListener('keydown', function(e){ if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); o.onclick(); } });
-  return c;
+  return h('div', {class:'pwrap'}, c);
 }
 function startSheet(){
   var close;
@@ -1292,13 +1292,18 @@ function groupInfoSheet(gid, info){
 }
 
 function groupView(gid){
-  var banner = h('div', {class:'banner'}), feed = h('div'), group = null, threads = null, lastSig = '';
+  var banner = h('div', {class:'banner'}), stageBox = h('div', {class:'stagebox'}), feed = h('div'), group = null, threads = null, lastSig = '';
   var entry = h('button', {type:'button', class:'entry', onclick:function(){ openCompose(gid, load, function(){ return group ? group.members.map(user) : []; }); }}, avatar(st.me.id, 44), h('span', {text:'いま何してる'}));
-  var el = h('div', {class:'page'}, banner, entry, feed);
+  var el = h('div', {class:'page'}, banner, stageBox, entry, feed);
 
   function draw(){
     if(!group) return;
     fillBanner(banner, group, {onBack:function(){ location.hash = '#/'; }, onSearch:function(){ searchSheet(gid); }, onSettings:function(){ groupInfoSheet(gid, load); }});
+    stageBox.innerHTML = '';
+    if(typeof group.scene === 'number' || (group.decor || []).length){
+      var stg = window.DARAScene.stage(group, {});
+      stg.setAttribute('style', S.roomVars(group)); stageBox.appendChild(stg);
+    }
     feed.innerHTML = '';
     if(!threads){ feed.appendChild(h('div', {class:'hint', style:'padding:16px 4px', text:'読み込み中'})); return; }
     if(!threads.length) feed.appendChild(h('div', {class:'hint', style:'padding:16px 4px', text:'最初のスレッドを立ててみましょう'}));

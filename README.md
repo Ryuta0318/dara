@@ -125,3 +125,8 @@ node tools/capture-assets.mjs       # public/assets/logo.png を書き出す
 部屋のキャラは `app/public/animals/<名前>.webp`（`gorilla` `bear` `rabbit` `cat` `fox` `penguin`）があればその画像を使い、無ければ内蔵の SVG で代用します。
 ChatGPT などで「真っ黒な背景・真珠のような白い立体キャラ」を作り、`tools/cutout.html` をブラウザで開いて入れると、背景が透明な WebP になります。
 色の変更は、画像の上に色を重ねて表現します（白いキャラほど綺麗に色が変わります）。
+
+## 部屋の背景・デコの画像
+
+背景は `app/public/scenes/<名前>.webp`（`room` `forest` `sea` `space` `snow` `sky` `candy` `night`）、デコは `app/public/decor/<名前>.webp`（`sofa` `plant` `lamp` `neon` `mushroom` `tree` `shell` `star`）に入れると、その画像を使います。無い間は色とえもじで代用します。
+デコは背景が透明なので、キャラと同じく `tools/cutout.html`（黒背景 → 透明）を通してください。背景は切り抜かず、そのまま WebP にします。

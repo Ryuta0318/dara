@@ -242,7 +242,7 @@ function oneMap(st){ var m = {}; m[st.id] = st.spec; return m; }
 var ACOLORS = ['#ffffff', '#ffd1e3', '#cfe0ff', '#c9f2df', '#fff0a8', '#e2d2ff', '#ffd9bd', '#d3d3d9'];
 function openRoomStyle(group, onSaved){
   var A = ui();
-  var cur = {name:group.name, color:group.color, ccolor:group.ccolor || null, animal:window.DARAAnimal.kindOf(group), acolor:group.acolor || null,
+  var cur = {name:group.name, color:group.color, ccolor:group.ccolor || null, animal:window.DARAAnimal.kindOf(group), acolor:group.acolor || null, scene:typeof group.scene === 'number' ? group.scene : null, decor:(group.decor || []).slice(0, 4),
     desc:group.desc || '', tfont:group.tfont || 0};
   var pvStage = h('div', {class:'pvstage'}), pvModes = h('div', {class:'pvmodes'}), colorBox = h('div'), animalBox = h('div', {class:'strip'}), acolBox = h('div', {class:'swrow'});
   var fontBox = h('div');
@@ -251,8 +251,8 @@ function openRoomStyle(group, onSaved){
   var close;
   function val(){ return cur.ccolor || cur.color; }
   // 完成イメージ：実際の画面と同じ部品で描く。スクロールしても、ずっと上に出ている
-  var PVK = 'dara.pvmode', mode = 'card';
-  try{ mode = localStorage.getItem(PVK) === 'banner' ? 'banner' : 'card'; }catch(e){}
+  var PVK = 'dara.pvmode2', mode = 'stage';
+  try{ var sm = localStorage.getItem(PVK); mode = sm === 'banner' || sm === 'card' ? sm : 'stage'; }catch(e){}
   function drawPreview(){
     var g = Object.assign({}, group, cur, {name:nameIn.value.trim() || '部屋の名前', desc:descIn.value.trim(), members:group.members || [], lastText:group.lastText || ''});
     pvStage.innerHTML = '';
@@ -263,10 +263,12 @@ function openRoomStyle(group, onSaved){
         var k = Math.min(1, pvStage.clientWidth / 390);
         b.style.transform = 'scale(' + k + ')'; wrap.style.height = Math.round(b.offsetHeight * k) + 'px';
       });
+    }else if(mode === 'stage'){
+      var stg = A.stage(g, {}); stg.setAttribute('style', A.roomVars(g)); pvStage.appendChild(h('div', {class:'pvcard'}, stg));
     }else pvStage.appendChild(h('div', {class:'pvcard'}, A.cardEl(g, {preview:true})));
     pvModes.innerHTML = '';
     pvModes.appendChild(h('span', {class:'pvcap', text:'完成イメージ'}));
-    [['card', 'ホームのカード'], ['banner', '部屋の中']].forEach(function(m){
+    [['stage', '部屋'], ['card', 'ホームのカード'], ['banner', '上のバー']].forEach(function(m){
       pvModes.appendChild(chip(m[1], mode === m[0], function(){ mode = m[0]; try{ localStorage.setItem(PVK, mode); }catch(e){} drawPreview(); }));
     });
   }
@@ -292,7 +294,7 @@ function openRoomStyle(group, onSaved){
     if(!name){ A.toast('部屋の名前を入れてください'); return; }
     save.disabled = true;
     try{
-      await A.api('/api/groups/' + group.id + '/style', {body:{name:name, color:cur.color, ccolor:cur.ccolor, animal:cur.animal, acolor:cur.acolor,
+      await A.api('/api/groups/' + group.id + '/style', {body:{name:name, color:cur.color, ccolor:cur.ccolor, animal:cur.animal, acolor:cur.acolor, scene:cur.scene, decor:cur.decor,
         desc:descIn.value.trim(), tfont:cur.tfont}});
       A.toast('部屋の見た目を変えました'); close(); if(onSaved) onSaved();
     }catch(e){ A.toast(A.errMsg(e)); save.disabled = false; }
@@ -302,11 +304,35 @@ function openRoomStyle(group, onSaved){
   var tabsEl = h('div', {class:'segtabs'}), pane = h('div');
   function drawTabs(){
     tabsEl.innerHTML = '';
-    [['chara', 'キャラ'], ['color', '色'], ['text', '文字']].forEach(function(t){
+    [['chara', 'キャラ'], ['scene', '背景'], ['decor', 'デコ'], ['color', '色'], ['text', '文字']].forEach(function(t){
       tabsEl.appendChild(h('button', {type:'button', class:'seg' + (tab === t[0] ? ' on' : ''), text:t[1], onclick:function(){ tab = t[0]; drawTabs(); }}));
     });
     pane.innerHTML = '';
     if(tab === 'chara'){ pane.appendChild(sec('キャラクターをえらぶ')); pane.appendChild(animalBox); pane.appendChild(sec('キャラクターのいろ')); pane.appendChild(acolBox); }
+    else if(tab === 'scene'){
+      pane.appendChild(sec('背景をえらぶ'));
+      var grid = h('div', {class:'scgrid'});
+      grid.appendChild(h('button', {type:'button', class:'sccell' + (cur.scene === null ? ' on' : ''), onclick:function(){ cur.scene = null; draw(); drawTabs(); }}, h('i', {class:'scth none'}), h('small', {text:'なし'})));
+      window.DARAScene.SCENES.forEach(function(sc, i){
+        grid.appendChild(h('button', {type:'button', class:'sccell' + (cur.scene === i ? ' on' : ''), onclick:function(){ cur.scene = i; draw(); drawTabs(); }},
+          h('i', {class:'scth', style:'background:' + sc.bg}, h('span', {text:sc.em})), h('small', {text:sc.n})));
+      });
+      pane.appendChild(grid);
+    }
+    else if(tab === 'decor'){
+      pane.appendChild(sec('かざるもの（4つまで）'));
+      var dg = h('div', {class:'scgrid'});
+      window.DARAScene.DECORS.forEach(function(d, i){
+        var on = cur.decor.indexOf(i) >= 0;
+        dg.appendChild(h('button', {type:'button', class:'sccell' + (on ? ' on' : ''), onclick:function(){
+          if(on) cur.decor = cur.decor.filter(function(x){ return x !== i; });
+          else if(cur.decor.length < 4) cur.decor = cur.decor.concat([i]);
+          else { A.toast('かざりは4つまでです'); return; }
+          draw(); drawTabs();
+        }}, h('i', {class:'scth deco'}, h('span', {text:d.em})), h('small', {text:d.n})));
+      });
+      pane.appendChild(dg);
+    }
     else if(tab === 'color'){ pane.appendChild(sec('部屋の色をえらぶ')); pane.appendChild(colorBox); }
     else{ pane.appendChild(sec('なまえ')); pane.appendChild(nameIn); pane.appendChild(sec('ひとこと')); pane.appendChild(descIn); pane.appendChild(sec('タイトルの書体')); pane.appendChild(fontBox); }
   }
