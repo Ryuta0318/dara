@@ -845,6 +845,7 @@ function fillBanner(banner, group, o){
   banner.appendChild(o.preview ? h('span', {class:'back', text:'‹ 戻る'}) : h('button', {type:'button', class:'back', text:'‹ 戻る', onclick:o.onBack}));
   banner.appendChild(o.preview ? h('span', {class:'gear', 'aria-hidden':'true'}, svgGear())
     : h('button', {type:'button', class:'gear', 'aria-label':'部屋の設定', onclick:o.onSettings}, svgGear()));
+  banner.appendChild(S.roomChar(group, 84, true));
   var dc = h('div', {class:'decos', 'aria-hidden':'true'});
   (group.decos || []).slice(0, 4).forEach(function(id){ dc.appendChild(stampEl(id, 46)); });
   banner.appendChild(dc);
@@ -900,7 +901,10 @@ function homeView(tab){
   }
   function drawGroups(){
     body.innerHTML = '';
-    body.appendChild(h('h2', {class:'sec', text:'グループ'}));
+    body.appendChild(h('div', {class:'sechead'}, h('h2', {class:'sec', text:'グループ'}),
+      h('div', {class:'minis'},
+        h('button', {type:'button', class:'mini', onclick:createGroupSheet}, h('b', {text:'＋'}), '部屋をつくる'),
+        h('button', {type:'button', class:'mini soft', onclick:joinSheet}, h('b', {text:'#'}), 'コードで入る'))));
     if(!groups){ body.appendChild(h('div', {class:'hint', text:'読み込み中'})); return; }
     if(!groups.length){
       body.appendChild(h('div', {class:'empty'}, orb(96, 0, {bob:true}),
@@ -910,8 +914,6 @@ function homeView(tab){
     groups.forEach(function(g){
       grid.appendChild(tileEl(g, {onclick:function(){ location.hash = '#/g/' + g.id; }}));
     });
-    grid.appendChild(h('button', {type:'button', class:'tile new', onclick:createGroupSheet}, '＋ 部屋をつくる'));
-    grid.appendChild(h('button', {type:'button', class:'tile new', onclick:joinSheet}, 'コードで入る'));
     body.appendChild(grid);
   }
   function buildFriends(){
