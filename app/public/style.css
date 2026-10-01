@@ -967,3 +967,44 @@ body{font-family:"Zen Maru Gothic","Hiragino Maru Gothic ProN","Hiragino Kaku Go
 .roomtag{margin-top:8px; padding:4px 12px; border-radius:999px; font-size:12px; font-weight:800; color:#ffa6d1; background:rgba(255,166,209,.12); cursor:pointer}
 .mcell{background:none}
 .hbtn{width:40px; height:40px; display:grid; place-items:center; font-size:26px; line-height:1; color:var(--ink); flex:none; cursor:pointer}
+
+/* ===== つながった投稿（1枚のカードの中に区切り線で並ぶ）===== */
+html{overscroll-behavior-y:contain}
+.feed{position:relative; border-radius:26px; background:var(--slab-dark); overflow:hidden; margin:6px 0 24px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 7px 0 #000,0 18px 24px rgba(0,0,0,.5)}
+.feed:empty{display:none}
+.feed>.post{background:none !important; box-shadow:none !important; border-radius:0 !important; margin:0 !important; padding:14px 16px !important; border-bottom:1px solid rgba(255,255,255,.09) !important; transform:none !important}
+.feed>.post:last-child{border-bottom:0 !important}
+.feed>.post>*:not(.sheen){transform:none}
+.feed>.post .sheen{display:none}
+.feed>.hint,.feed>.b3{margin:12px 16px}
+.feed>.cdiv{padding:12px 16px 0}
+.feed>.post.reply{margin-left:0 !important; padding-left:44px !important}
+.clist{margin-top:14px}
+.clist>.cdiv{background:none}
+
+/* リンクのプレビュー */
+.lpv:empty{display:none}
+.lpv{margin:10px 0 4px; max-width:100%}
+.lpcard{display:block; overflow:hidden; border-radius:20px; text-decoration:none; color:var(--ink); background:#0b0a0e; box-shadow:inset 0 3px 8px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.1)}
+.lpimg{display:block; width:100%; max-height:190px; object-fit:cover; background:#1a1920}
+.lpt{display:flex; flex-direction:column; gap:3px; padding:10px 14px 12px; min-width:0}
+.lpt small{color:var(--sub); font-weight:800; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.lpt b{font-size:14px; line-height:1.4; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden}
+.lpt span{color:#b7b4c2; font-size:12px; line-height:1.5; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden}
+.lpcard:active{opacity:.85}
+
+/* 引っぱって更新 */
+.ptr{position:fixed; left:50%; top:calc(env(safe-area-inset-top,0px) + 8px); z-index:60; transform:translate(-50%,-60px); display:flex; align-items:center; gap:8px; padding:9px 16px; border-radius:999px; font-size:13px; font-weight:800; color:#1b1a22;
+  background:var(--pearl-grad,#fff); box-shadow:0 5px 0 #9a92aa,0 12px 16px rgba(0,0,0,.5); opacity:0; pointer-events:none; transition:opacity .15s}
+.ptr .ptri{display:inline-block; transition:transform .2s}
+.ptr.ready .ptri{transform:rotate(180deg)}
+.ptr.spin .ptri{animation:spinr .8s linear infinite}
+.ptr.spin .ptri::before{content:"↻"}
+.ptr.spin .ptri{font-size:0}
+.ptr.spin .ptri::before{font-size:15px}
+@keyframes spinr{to{transform:rotate(360deg)}}
+.hbtn.refresh svg{transition:transform .5s}
+.hbtn.refresh.spin svg{animation:spinr .8s linear infinite}
+.top .hbtn.refresh,.tbar .hbtn.refresh{margin-left:auto}
+.tbar{display:flex; align-items:center; gap:8px}

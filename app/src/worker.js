@@ -121,6 +121,52 @@ function nudgeSlot(now) {
   return -1;
 }
 
+// ---- リンクのプレビュー ----
+const ENT = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+const decodeEnt = (t) =>
+  String(t || "")
+    .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
+      if (e[0] === "#") {
+        const n = e[1].toLowerCase() === "x" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+        return n > 0 && n < 0x110000 ? String.fromCodePoint(n) : m;
+      }
+      return ENT[e.toLowerCase()] ?? m;
+    })
+    .replace(/\s+/g, " ")
+    .trim();
+function previewHostOk(u, allowLocal) {
+  if (u.username || u.password) return false;
+  const h = u.hostname.toLowerCase();
+  if (allowLocal) return true;
+  if (u.port && u.port !== "80" && u.port !== "443") return false;
+  if (!h.includes(".") || h.endsWith(".local") || h.endsWith(".internal") || h === "localhost" || h.startsWith("[")) return false;
+  const ip = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (ip) {
+    const [a, b] = [Number(ip[1]), Number(ip[2])];
+    if (a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || a >= 224) return false;
+  }
+  return true;
+}
+function parsePreview(html, base) {
+  const metas = {};
+  for (const m of html.matchAll(/<meta\s+([^>]*?)\/?>/gi)) {
+    const a = {};
+    for (const x of m[1].matchAll(/([a-zA-Z:_-]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'>]+))/g)) a[x[1].toLowerCase()] = x[3] ?? x[4] ?? x[5] ?? "";
+    const key = (a.property || a.name || "").toLowerCase();
+    if (key && a.content !== undefined && !(key in metas)) metas[key] = decodeEnt(a.content);
+  }
+  const title = metas["og:title"] || metas["twitter:title"] || decodeEnt((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1]);
+  const desc = metas["og:description"] || metas["twitter:description"] || metas.description || "";
+  let image = metas["og:image"] || metas["og:image:url"] || metas["twitter:image"] || "";
+  try {
+    image = image ? new URL(image, base).href : "";
+    if (!/^https?:/.test(image)) image = "";
+  } catch {
+    image = "";
+  }
+  return { url: base, site: metas["og:site_name"] || new URL(base).hostname.replace(/^www\./, ""), title: title.slice(0, 200), desc: desc.slice(0, 300), image };
+}
+
 export class Hub extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
@@ -593,6 +639,10 @@ export class Hub extends DurableObject {
       const u = this.one("SELECT id,handle,name,color,avatar,bio,animal FROM users WHERE handle=?", m[1]);
       if (!u || this.blockedPair(me.id, u.id)) throw new HttpError(404, "not_found");
       return json({ user: pub(u), rel: this.relation(me.id, u.id), blocked: this.blockedByMe(me.id, u.id) });
+    }
+    if (path === "/api/preview" && M === "GET") {
+      this.rate("pv:" + me.id, 240, 36e5);
+      return json({ p: await this.preview(url.searchParams.get("url")) });
     }
     // プロフィール（自分・友達・同じ部屋の人だけ見られる）
     if ((m = path.match(/^\/api\/profile\/([A-Za-z0-9_-]{1,40})(\/posts)?$/)) && M === "GET") {
@@ -1241,6 +1291,57 @@ export class Hub extends DurableObject {
     this.run("INSERT OR REPLACE INTO attempts(k,n,ts) VALUES(?,?,?)", key, n + 1, Date.now());
   }
   // 決まった時間内の回数を数えて、超えたら止める（登録・部屋づくり・コード入力・友達申請）
+
+  async preview(raw) {
+    let u;
+    try {
+      u = new URL(String(raw || "").slice(0, 2000));
+    } catch {
+      return {};
+    }
+    const local = !!this.origin && /^https?:\/\/(127\.0\.0\.1|localhost)(:|$)/.test(this.origin);
+    if (!/^https?:$/.test(u.protocol) || !previewHostOk(u, local)) return {};
+    const key = "pv:" + u.href;
+    const hit = this.one("SELECT v FROM kv WHERE k=?", key);
+    if (hit) {
+      try {
+        const c = JSON.parse(hit.v);
+        if (Date.now() - c.ts < (c.r.title ? 6 * 36e5 : 36e5)) return c.r;
+      } catch {}
+    }
+    let r = {};
+    try {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 4500);
+      const res = await fetch(u.href, { signal: ctl.signal, redirect: "follow", headers: { "user-agent": "Mozilla/5.0 (compatible; DARA-Preview/1.0; +https://dara.app)", accept: "text/html,application/xhtml+xml" } });
+      if (res.ok && /html/i.test(res.headers.get("content-type") || "") && res.body) {
+        const reader = res.body.getReader();
+        const dec = new TextDecoder("utf-8", { fatal: false });
+        let html = "";
+        let n = 0;
+        while (n < 400000) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          n += value.length;
+          html += dec.decode(value, { stream: true });
+          if (/<\/head>/i.test(html)) break;
+        }
+        try {
+          await reader.cancel();
+        } catch {}
+        const finalUrl = res.url && /^https?:/.test(res.url) ? res.url : u.href;
+        r = parsePreview(html, finalUrl);
+        if (!r.title && !r.image) r = {};
+      }
+      clearTimeout(timer);
+    } catch (e) {
+      r = {};
+    }
+    this.run("INSERT OR REPLACE INTO kv(k,v) VALUES(?,?)", key, JSON.stringify({ ts: Date.now(), r }));
+    this.run("DELETE FROM kv WHERE k LIKE 'pv:%' AND k NOT IN (SELECT k FROM kv WHERE k LIKE 'pv:%' ORDER BY rowid DESC LIMIT 400)");
+    return r;
+  }
+
   rate(key, limit, windowMs) {
     const now = Date.now();
     const r = this.one("SELECT n,ts FROM attempts WHERE k=?", key);

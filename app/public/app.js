@@ -506,6 +506,63 @@ function reactBar(p, o){
   bar.appendChild(add);
   return bar;
 }
+// リンクのプレビュー（タイトル・説明・画像）
+var pvCache = {};
+function firstUrl(text){
+  var m = /https?:\/\/[^\s<>"'）)」』]+/.exec(text || '');
+  return m ? m[0].replace(/[.,、。!?]+$/, '') : null;
+}
+function previewEl(text){
+  var u = firstUrl(text); if(!u) return null;
+  var box = h('div', {class:'lpv'});
+  function show(p){
+    if(!p || (!p.title && !p.image)) return;
+    var img = p.image ? h('img', {class:'lpimg', src:p.image, alt:'', loading:'lazy', referrerpolicy:'no-referrer'}) : null;
+    if(img) img.addEventListener('error', function(){ img.remove(); });
+    box.appendChild(h('a', {class:'lpcard', href:p.url || u, target:'_blank', rel:'noopener noreferrer', onclick:function(e){ e.stopPropagation(); }},
+      img, h('div', {class:'lpt'}, h('small', {text:p.site || ''}), h('b', {text:p.title || u}), p.desc ? h('span', {text:p.desc}) : null)));
+  }
+  if(!(u in pvCache)) pvCache[u] = api('/api/preview?url=' + encodeURIComponent(u)).then(function(r){ return r.p; }).catch(function(){ return null; });
+  Promise.resolve(pvCache[u]).then(show);
+  return box;
+}
+// 画面を下に引っぱって更新（スマホ）
+function attachPull(fn){
+  var ind = h('div', {class:'ptr', 'aria-hidden':'true'}, h('span', {class:'ptri', text:'↓'}), h('small', {text:'引っぱって更新'}));
+  document.body.appendChild(ind);
+  var y0 = null, dy = 0, busy = false;
+  function reset(){ ind.className = 'ptr'; ind.style.transform = ''; ind.style.opacity = ''; ind.querySelector('small').textContent = '引っぱって更新'; }
+  function ts(e){
+    if(window.scrollY <= 0 && !busy && e.touches.length === 1 && !document.querySelector('.sheet-back')){ y0 = e.touches[0].clientY; dy = 0; } else y0 = null;
+  }
+  function tm(e){
+    if(y0 === null) return;
+    dy = Math.max(0, e.touches[0].clientY - y0);
+    if(dy > 0 && window.scrollY <= 0){
+      var p = Math.min(dy * 0.5, 90);
+      ind.style.transform = 'translate(-50%,' + (p - 60) + 'px)'; ind.style.opacity = Math.min(1, p / 64);
+      ind.classList.toggle('ready', p >= 64);
+      ind.querySelector('small').textContent = p >= 64 ? 'はなして更新' : '引っぱって更新';
+    }
+  }
+  function te(){
+    if(y0 === null) return;
+    var go = dy * 0.5 >= 64; y0 = null;
+    if(!go){ reset(); return; }
+    busy = true; ind.classList.add('spin'); ind.querySelector('small').textContent = '更新中'; ind.style.transform = 'translate(-50%,22px)'; ind.style.opacity = 1;
+    Promise.resolve().then(fn).catch(function(){}).then(function(){ setTimeout(function(){ busy = false; reset(); toast('更新しました'); }, 350); });
+  }
+  document.addEventListener('touchstart', ts, {passive:true});
+  document.addEventListener('touchmove', tm, {passive:true});
+  document.addEventListener('touchend', te, {passive:true});
+  return function(){ document.removeEventListener('touchstart', ts); document.removeEventListener('touchmove', tm); document.removeEventListener('touchend', te); ind.remove(); };
+}
+function refreshBtn(fn){
+  var b = h('button', {type:'button', class:'hbtn refresh', 'aria-label':'更新', onclick:function(){
+    b.classList.add('spin'); Promise.resolve().then(fn).catch(function(){}).then(function(){ setTimeout(function(){ b.classList.remove('spin'); toast('更新しました'); }, 400); });
+  }}, svgIcon('<path d="M21 12a9 9 0 1 1-3-6.7"></path><path d="M21 3v6h-6"></path>'));
+  return b;
+}
 // アイコンをタップするとプロフィールへ
 function avLink(id, size){
   return h('button', {type:'button', class:'avlink', 'aria-label':user(id).name + ' のプロフィール', onclick:function(e){ e.stopPropagation(); location.hash = '#/u/' + id; }}, avatar(id, size));
@@ -515,6 +572,7 @@ function postEl(p, o){
   var body = h('div', null,
     h('div', {class:'who'}, h('b', {text:user(p.author).name}), h('span', {class:'ago', text:ago(p.ts)}), p.edited ? h('span', {class:'ago', text:'編集済み'}) : null, p.pinned ? h('span', {class:'pinned', text:'ピン留め'}) : null),
     p.text ? h('div', {class:'ptxt'}, richText(p.text)) : null,
+    p.text ? previewEl(p.text) : null,
     p.poll ? pollEl(p, o.onReact) : null,
     p.stamp ? h('div', {class:'stampbig'}, stampEl(p.stamp, 104)) : null,
     media(p.images),
@@ -522,7 +580,6 @@ function postEl(p, o){
     reactBar(p, o),
     o.extra || null);
   var el = h('article', {class:'post' + (o.click ? ' tap' : '') + (o.big ? ' big' : '')}, h('div', {class:'sheen'}), avLink(p.author, 44), body);
-  tilt3d(el, 5.6);
   if(o.click){
     el.setAttribute('tabindex', '0'); el.setAttribute('role', 'button');
     el.addEventListener('click', o.click);
@@ -897,6 +954,7 @@ function fillBanner(banner, group, o){
   var bar = h('div', {class:'hbar'});
   if(o.preview){ bar.appendChild(h('span', {class:'hbtn', text:'⌕'})); bar.appendChild(h('span', {class:'hbtn', 'aria-hidden':'true'}, svgGear())); }
   else{
+    if(o.onRefresh) bar.appendChild(refreshBtn(o.onRefresh));
     bar.appendChild(h('button', {type:'button', class:'hbtn', 'aria-label':'探す', onclick:o.onSearch}, svgSearch()));
     bar.appendChild(h('button', {type:'button', class:'hbtn gear', 'aria-label':'部屋の設定', onclick:o.onSettings}, svgGear()));
   }
@@ -1163,9 +1221,9 @@ function homeView(tab){
       lastSig = sig; groups = r[0].groups; fr = r[1]; dms = r[2]; nf = r[3]; draw();
     }catch(e){}
   }
-  var stop = poll(load, 10000);
+  var stop = poll(load, 10000), detach = attachPull(function(){ return load(true); });
   draw(); load(true);
-  return {el:el, load:load, destroy:function(){ stop(); if(killHero) killHero(); }};
+  return {el:el, load:load, destroy:function(){ stop(); detach(); if(killHero) killHero(); }};
 }
 
 function createGroupSheet(){
@@ -1316,13 +1374,13 @@ function groupInfoSheet(gid, info){
 }
 
 function groupView(gid){
-  var banner = h('div', {class:'banner'}), stageBox = h('div', {class:'stagebox'}), feed = h('div'), group = null, threads = null, lastSig = '';
+  var banner = h('div', {class:'banner'}), stageBox = h('div', {class:'stagebox'}), feed = h('div', {class:'feed'}), group = null, threads = null, lastSig = '';
   var entry = h('button', {type:'button', class:'entry', onclick:function(){ openCompose(gid, load, function(){ return group ? group.members.map(user) : []; }); }}, avatar(st.me.id, 44), h('span', {text:'いま何してる'}));
   var el = h('div', {class:'page'}, banner, stageBox, entry, feed);
 
   function draw(){
     if(!group) return;
-    fillBanner(banner, group, {onBack:function(){ location.hash = '#/'; }, onSearch:function(){ searchSheet(gid); }, onSettings:function(){ groupInfoSheet(gid, load); }});
+    fillBanner(banner, group, {onBack:function(){ location.hash = '#/'; }, onSearch:function(){ searchSheet(gid); }, onSettings:function(){ groupInfoSheet(gid, load); }, onRefresh:function(){ return load(true); }});
     stageBox.innerHTML = '';
     if(typeof group.scene === 'number' || (group.decor || []).length){
       var stg = window.DARAScene.stage(group, {vars:S.roomVars(group)});
@@ -1346,9 +1404,9 @@ function groupView(gid){
       if(inviteFor === gid){ inviteFor = null; groupInfoSheet(gid, load); }
     }catch(e){ if(e.status === 404){ location.hash = '#/'; } }
   }
-  var stop = poll(load, 6000);
+  var stop = poll(load, 6000), detach = attachPull(function(){ return load(true); });
   load(true);
-  return {el:el, load:load, destroy:stop};
+  return {el:el, load:load, destroy:function(){ stop(); detach(); }};
 }
 
 function openCompose(gid, after, members){
@@ -1382,7 +1440,7 @@ function openCompose(gid, after, members){
 
 /* ---------- thread ---------- */
 function threadView(tid){
-  var head = h('div', {class:'tbar'}), postBox = h('div'), list = h('div'), data = null, lastSig = '', gid = null, replyTo = null;
+  var head = h('div', {class:'tbar'}), postBox = h('div'), list = h('div', {class:'feed clist'}), data = null, lastSig = '', gid = null, replyTo = null;
   var replyBar = h('div', {class:'replybar'});
   function drawReply(){
     replyBar.innerHTML = '';
@@ -1407,6 +1465,7 @@ function threadView(tid){
     var t = data.thread, cs = data.comments;
     head.innerHTML = '';
     head.appendChild(h('button', {type:'button', class:'back', text:'‹ ' + data.group.name, onclick:function(){ location.hash = '#/g/' + t.gid; }}));
+    head.appendChild(refreshBtn(function(){ return load(true); }));
     postBox.innerHTML = '';
     var roomOwner = data.group.owner === st.me.id;
     postBox.appendChild(postEl(t, {big:true, onReact:function(){ load(true); },
@@ -1439,9 +1498,9 @@ function threadView(tid){
       lastSig = sig; data = r; gid = r.thread.gid; draw();
     }catch(e){ if(e.status === 404){ location.hash = '#/'; } }
   }
-  var stop = poll(load, 4000);
+  var stop = poll(load, 4000), detach = attachPull(function(){ return load(true); });
   load(true);
-  return {el:el, load:load, destroy:stop};
+  return {el:el, load:load, destroy:function(){ stop(); detach(); }};
 }
 
 /* ---------- friend link / room link ---------- */
@@ -1512,6 +1571,7 @@ function dmView(peer){
       var mine = m.author === st.me.id;
       var col = h('div', {class:'dmcol'});
       if(m.text) col.appendChild(h('div', {class:'bub'}, richText(m.text)));
+      if(m.text){ var pv = previewEl(m.text); if(pv) col.appendChild(pv); }
       if(m.stamp) col.appendChild(h('div', {class:'stampbig'}, stampEl(m.stamp, 104)));
       var md = media(m.images); if(md) col.appendChild(md);
       var rb = reactBar(m, {onReact:function(){ load(true); }}); if(rb) col.appendChild(rb);
@@ -1537,9 +1597,9 @@ function dmView(peer){
       lastSig = sig; data = r; draw();
     }catch(e){ if(e.status === 404){ toast('友達ではないので、メッセージできません'); location.hash = '#/dm'; } }
   }
-  var stop = poll(load, 3000);
+  var stop = poll(load, 3000), detach = attachPull(function(){ return load(true); });
   load(true);
-  return {el:el, load:load, destroy:stop};
+  return {el:el, load:load, destroy:function(){ stop(); detach(); }};
 }
 
 function joinView(code){
@@ -1567,9 +1627,9 @@ function joinView(code){
 /* ---------- profile page (X-like) ---------- */
 function profileView(id){
   if(id === 'me') id = st.me.id;
-  var body = h('div'), feed = h('div', {class:'feed3d'}), data = null, threads = [], more = false, loadingMore = false, err = false;
+  var body = h('div'), feed = h('div', {class:'feed'}), data = null, threads = [], more = false, loadingMore = false, err = false;
   var el = h('div', {class:'page'},
-    h('header', {class:'top'}, h('button', {type:'button', class:'hbtn', 'aria-label':'戻る', text:'‹', onclick:function(){ if(history.length > 1) history.back(); else location.hash = '#/'; }}), h('span')), body);
+    h('header', {class:'top'}, h('button', {type:'button', class:'hbtn', 'aria-label':'戻る', text:'‹', onclick:function(){ if(history.length > 1) history.back(); else location.hash = '#/'; }}), refreshBtn(function(){ return Promise.all([loadProfile(), loadPosts(true)]); })), body);
   function relBtns(){
     var rel = data.rel, row = h('div', {class:'pact'});
     if(rel === 'self'){
@@ -1634,7 +1694,8 @@ function profileView(id){
   }
   function oneU(u){ var m = {}; m[u.id] = u; return m; }
   drawHead(); loadProfile();
-  return {el:el, destroy:function(){}};
+  var detach = attachPull(function(){ return Promise.all([loadProfile(), loadPosts(true)]); });
+  return {el:el, destroy:detach};
 }
 
 function render(){
