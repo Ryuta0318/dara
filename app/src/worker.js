@@ -83,7 +83,7 @@ function makeRecovery() {
 const normRecovery = (v) => str(v, 40).toUpperCase().replace(/[\s-]/g, "");
 // 添付の呼び名（通知や部屋の一覧の「最後の投稿」に使う）
 const mediaLabel = (imgs) => (Array.isArray(imgs) && imgs.some((x) => String(x).startsWith("v:")) ? "動画" : "写真");
-const VIDEO_MAX = 100 * 1024 * 1024; // 1本 100MB まで
+const VIDEO_MAX = 30 * 1024 * 1024; // 1本 30MB まで（データベースの容量を食べすぎないように）
 const VPART = 1.5 * 1024 * 1024; // データベースに保存するとき（R2 をつないでいないとき）
 const VPART_R2 = 8 * 1024 * 1024; // R2 に保存するとき
 const VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/webm"];

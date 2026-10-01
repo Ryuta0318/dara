@@ -321,7 +321,7 @@ function fillPics(w, ids){
 }
 
 /* ---------- 動画 ---------- */
-var VIDEO_MAX = 100 * 1024 * 1024;
+var VIDEO_MAX = 30 * 1024 * 1024;
 function isVideoId(id){ return typeof id === 'string' && id.indexOf('v:') === 0; }
 function videoUrl(id){ return '/api/videos/' + id.slice(2); }
 var vinfoCache = {};
@@ -448,7 +448,7 @@ function makeComposer(o){
       var f = files[i];
       if(/^video\//.test(f.type) || /\.(mov|mp4|m4v|webm)$/i.test(f.name)){
         if(imgs.some(function(x){ return x.video; })){ toast('動画は1つの投稿に1本までです'); continue; }
-        if(f.size > VIDEO_MAX){ toast('動画は100MBまでです（短く切ってから送ってください）'); continue; }
+        if(f.size > VIDEO_MAX){ toast('動画は30MBまでです（短く切ってから送ってください）'); continue; }
         var meta = await videoMeta(f);
         imgs.push({video:true, file:f, poster:meta.poster || null, dataUrl:meta.dataUrl || '', w:meta.w, h:meta.h, dur:meta.dur});
         continue;

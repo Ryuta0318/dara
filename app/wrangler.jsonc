@@ -14,8 +14,11 @@
   },
   // 通報を見られる人のユーザーID（カンマ区切り）。自分のIDを入れる
   "vars": { "ADMIN_HANDLES": "" },
-  // 写真・動画の置き場（Cloudflare R2）。先に1回だけ: npx wrangler r2 bucket create dara-media
-  "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "dara-media" }],
+  // 写真・動画は、いまは Durable Object のデータベースに保存している（無料で約 5GB）。
+  // 外付けの置き場（Cloudflare R2）に移すときは、R2 を有効にして
+  //   npx wrangler r2 bucket create dara-media
+  // を1回だけ実行し、次の行の // を外してデプロイする（入っている写真も自動で少しずつ移る）
+  // "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "dara-media" }],
   "durable_objects": {
     "bindings": [{ "name": "HUB", "class_name": "Hub" }]
   },
