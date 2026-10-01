@@ -1076,3 +1076,21 @@ html{overscroll-behavior-y:contain}
 
 /* 部屋の設定シートの中のステージ */
 .stagebox.insheet{margin:12px 0 6px}
+
+/* ---------- 動画 ---------- */
+.media.vonly{display:block}
+.vid{position:relative; width:100%; aspect-ratio:16 / 9; max-height:520px; margin:6px 0 4px; border-radius:22px; overflow:hidden; background:#000; box-shadow:0 0 0 1px var(--line),0 14px 26px rgba(0,0,0,.55); cursor:pointer}
+.vid .vposter{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block}
+.vid video{position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:#000; display:block}
+.vplay{position:absolute; left:50%; top:50%; width:72px; height:72px; margin:-36px 0 0 -36px; border-radius:50%; background:rgba(10,10,14,.55); box-shadow:inset 0 0 0 2px rgba(255,255,255,.85),0 6px 20px rgba(0,0,0,.5); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); transition:transform .15s ease}
+.vid:hover .vplay{transform:scale(1.06)}
+.vid:active .vplay{transform:scale(.94)}
+.vtri{position:absolute; left:29px; top:22px; border-style:solid; border-width:14px 0 14px 22px; border-color:transparent transparent transparent #fff}
+.vdur{position:absolute; right:12px; bottom:10px; padding:3px 9px; border-radius:999px; background:rgba(0,0,0,.6); color:#fff; font-size:12px; font-weight:900; font-variant-numeric:tabular-nums}
+.vdur:empty{display:none}
+.verr{position:absolute; left:0; right:0; bottom:0; padding:10px 14px; background:rgba(0,0,0,.75); color:#fff; font-size:13px; display:flex; justify-content:space-between; gap:10px}
+.verr a{color:#c9c3ff; font-weight:900}
+.th.tv img,.thblank{width:76px; height:76px; object-fit:cover; border-radius:16px; display:block; background:#000; box-shadow:0 0 0 1px var(--line)}
+.thv{position:absolute; left:6px; bottom:6px; padding:2px 7px; border-radius:999px; background:rgba(0,0,0,.65); color:#fff; font-size:11px; font-weight:900}
+.pcell{position:relative}
+.pcellv{position:absolute; right:8px; top:6px; color:#fff; font-size:14px; text-shadow:0 1px 4px rgba(0,0,0,.8); z-index:1}

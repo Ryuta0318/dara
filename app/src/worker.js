@@ -81,6 +81,11 @@ function makeRecovery() {
   return `${c.slice(0, 4)}-${c.slice(4, 8)}-${c.slice(8)}`;
 }
 const normRecovery = (v) => str(v, 40).toUpperCase().replace(/[\s-]/g, "");
+// 添付の呼び名（通知や部屋の一覧の「最後の投稿」に使う）
+const mediaLabel = (imgs) => (Array.isArray(imgs) && imgs.some((x) => String(x).startsWith("v:")) ? "動画" : "写真");
+const VIDEO_MAX = 100 * 1024 * 1024; // 1本 100MB まで
+const VPART = 1.5 * 1024 * 1024;
+const VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/webm"];
 const builtinStamp = (v) => typeof v === "string" && /^b:[a-z0-9]{1,12}$/.test(v);
 
 export default {
@@ -271,6 +276,9 @@ export class Hub extends DurableObject {
     this.sql.exec("CREATE TABLE IF NOT EXISTS reports(id TEXT PRIMARY KEY, reporter TEXT, kind TEXT, tgt TEXT, gid TEXT, reason TEXT, ts INTEGER, status TEXT DEFAULT 'open')");
     this.sql.exec("CREATE TABLE IF NOT EXISTS votes(tid TEXT, uid TEXT, opt INTEGER, PRIMARY KEY(tid,uid))");
     this.sql.exec("CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT)");
+    // 動画：1本を 1.5MB ずつに分けて保存する（SQLite の1つの値は 2MB まで）
+    this.sql.exec("CREATE TABLE IF NOT EXISTS videos(id TEXT PRIMARY KEY, owner TEXT, mime TEXT, size INTEGER, parts INTEGER, poster TEXT, w INTEGER, h INTEGER, dur REAL, done INTEGER DEFAULT 0, ts INTEGER)");
+    this.sql.exec("CREATE TABLE IF NOT EXISTS vparts(vid TEXT, n INTEGER, data BLOB, PRIMARY KEY(vid, n))");
     this.sql.exec("CREATE TABLE IF NOT EXISTS push_subs(id TEXT PRIMARY KEY, uid TEXT, endpoint TEXT UNIQUE, p256dh TEXT, auth TEXT, ts INTEGER)");
     this.sql.exec("CREATE INDEX IF NOT EXISTS ps_uid ON push_subs(uid)");
     for (const g of this.q("SELECT id FROM groups WHERE code IS NULL")) {
@@ -348,10 +356,18 @@ export class Hub extends DurableObject {
     if (!g || !this.member(gid, uid)) throw new HttpError(404, "not_found");
     return g;
   }
-  ownImgs(list, uid) {
+  ownImgs(list, uid, allowVideo = false) {
     if (!Array.isArray(list)) return [];
-    const ids = list.filter((x) => typeof x === "string" && /^[a-f0-9]{24}$/.test(x)).slice(0, 4);
-    return ids.filter((id) => this.one("SELECT 1 x FROM images WHERE id=? AND owner=?", id, uid));
+    const ids = list.filter((x) => typeof x === "string" && (/^[a-f0-9]{24}$/.test(x) || (allowVideo && /^v:[a-f0-9]{24}$/.test(x)))).slice(0, 4);
+    let videos = 0;
+    return ids.filter((id) => {
+      if (id.startsWith("v:")) {
+        // 動画は1つの投稿に1本まで
+        if (videos++) return false;
+        return !!this.one("SELECT 1 x FROM videos WHERE id=? AND owner=? AND done=1", id.slice(2), uid);
+      }
+      return !!this.one("SELECT 1 x FROM images WHERE id=? AND owner=?", id, uid);
+    });
   }
   async body(req) {
     try {
@@ -616,6 +632,83 @@ export class Hub extends DurableObject {
       this.run("INSERT INTO images(id,owner,mime,data,ts) VALUES(?,?,?,?,?)", id, me.id, mime, buf, Date.now());
       return json({ id });
     }
+    // ---- 動画：はじめる → 1.5MB ずつ送る → おわり。再生は Range（部分取得）に対応 ----
+    if (path === "/api/videos" && M === "POST") {
+      const b = await this.body(req);
+      const mime = VIDEO_TYPES.includes(b.mime) ? b.mime : "";
+      const size = Math.floor(Number(b.size));
+      if (!mime) throw bad("type");
+      if (!(size > 0)) throw bad("size");
+      if (size > VIDEO_MAX) throw new HttpError(413, "too_large");
+      this.rate("v:" + me.id, 30, 36e5);
+      const id = rid(12);
+      this.run("INSERT INTO videos(id,owner,mime,size,parts,ts) VALUES(?,?,?,?,?,?)", id, me.id, mime, size, Math.ceil(size / VPART), Date.now());
+      return json({ id, part: VPART });
+    }
+    if ((m = path.match(/^\/api\/videos\/([a-f0-9]{24})\/(\d{1,3})$/)) && M === "PUT") {
+      const v = this.one("SELECT * FROM videos WHERE id=? AND owner=? AND done=0", m[1], me.id);
+      if (!v) throw new HttpError(404, "not_found");
+      const n = Number(m[2]);
+      if (n >= v.parts) throw bad("part");
+      const buf = await req.arrayBuffer();
+      const want = n === v.parts - 1 ? v.size - n * VPART : VPART;
+      if (buf.byteLength !== want) throw bad("part_size");
+      this.run("INSERT OR REPLACE INTO vparts(vid,n,data) VALUES(?,?,?)", v.id, n, buf);
+      return json({ ok: true });
+    }
+    if ((m = path.match(/^\/api\/videos\/([a-f0-9]{24})\/done$/)) && M === "POST") {
+      const v = this.one("SELECT * FROM videos WHERE id=? AND owner=? AND done=0", m[1], me.id);
+      if (!v) throw new HttpError(404, "not_found");
+      const got = this.one("SELECT COUNT(*) n FROM vparts WHERE vid=?", v.id).n;
+      if (got !== v.parts) throw bad("incomplete");
+      const b = await this.body(req);
+      const poster = this.ownImgs([b.poster], me.id)[0] || null;
+      const w = cInt(b.w, 0, 10000, 0), hh = cInt(b.h, 0, 10000, 0);
+      const dur = Number.isFinite(Number(b.dur)) ? Math.max(0, Math.min(36000, Number(b.dur))) : 0;
+      this.run("UPDATE videos SET done=1, poster=?, w=?, h=?, dur=? WHERE id=?", poster, w, hh, dur, v.id);
+      return json({ id: "v:" + v.id });
+    }
+    if ((m = path.match(/^\/api\/videos\/([a-f0-9]{24})\/info$/)) && M === "GET") {
+      const v = this.one("SELECT poster,w,h,dur,mime FROM videos WHERE id=? AND done=1", m[1]);
+      if (!v) throw new HttpError(404, "not_found");
+      return json({ poster: v.poster, w: v.w, h: v.h, dur: v.dur, mime: v.mime }, 200, { "cache-control": "private, max-age=31536000, immutable" });
+    }
+    if ((m = path.match(/^\/api\/videos\/([a-f0-9]{24})$/)) && (M === "GET" || M === "HEAD")) {
+      const v = this.one("SELECT * FROM videos WHERE id=? AND done=1", m[1]);
+      if (!v) throw new HttpError(404, "not_found");
+      // iPhone の Safari は Range で少しずつ取りに来る。来なければ全体を流す
+      let start = 0, end = v.size - 1, status = 200;
+      const rg = (req.headers.get("range") || "").match(/^bytes=(\d*)-(\d*)$/);
+      if (rg && (rg[1] || rg[2])) {
+        if (rg[1]) {
+          start = Number(rg[1]);
+          if (rg[2]) end = Math.min(Number(rg[2]), v.size - 1);
+        } else start = Math.max(0, v.size - Number(rg[2]));
+        if (start > end || start >= v.size) return new Response(null, { status: 416, headers: { "content-range": `bytes */${v.size}` } });
+        status = 206;
+      }
+      // .mov も多くは H.264 なので、mp4 として渡すと Android / PC の Chrome でも再生できる
+      const type = v.mime === "video/quicktime" ? "video/mp4" : v.mime;
+      const headers = { "content-type": type, "accept-ranges": "bytes", "content-length": String(end - start + 1), "cache-control": "private, max-age=31536000, immutable", "x-content-type-options": "nosniff" };
+      if (status === 206) headers["content-range"] = `bytes ${start}-${end}/${v.size}`;
+      if (M === "HEAD") return new Response(null, { status, headers });
+      const sql = this.sql;
+      let n = Math.floor(start / VPART);
+      const last = Math.floor(end / VPART);
+      const body = new ReadableStream({
+        pull(ctrl) {
+          if (n > last) return ctrl.close();
+          const row = sql.exec("SELECT data FROM vparts WHERE vid=? AND n=?", v.id, n).toArray()[0];
+          if (!row) return ctrl.error(new Error("missing part"));
+          const buf = new Uint8Array(row.data);
+          const from = n === Math.floor(start / VPART) ? start - n * VPART : 0;
+          const to = n === last ? end - n * VPART + 1 : buf.length;
+          ctrl.enqueue(buf.subarray(from, to));
+          n++;
+        },
+      });
+      return new Response(body, { status, headers });
+    }
     if ((m = path.match(/^\/api\/images\/([a-f0-9]{24})$/)) && M === "GET") {
       const r = this.one("SELECT mime,data FROM images WHERE id=?", m[1]);
       if (!r) throw new HttpError(404, "not_found");
@@ -864,7 +957,7 @@ export class Hub extends DurableObject {
       if (M === "POST") {
         const b = await this.body(req);
         const text = str(b.text, 2e4);
-        const imgs = this.ownImgs(b.images, me.id);
+        const imgs = this.ownImgs(b.images, me.id, true);
         // アンケート（選択肢は2〜6個）
         let poll = null;
         if (Array.isArray(b.poll)) {
@@ -875,7 +968,7 @@ export class Hub extends DurableObject {
         const id = rid(10);
         const now = Date.now();
         this.run("INSERT INTO threads(id,gid,author,body,imgs,ts,last,ccount,poll) VALUES(?,?,?,?,?,?,?,0,?)", id, g.id, me.id, text, JSON.stringify(imgs), now, now, poll);
-        this.run("UPDATE groups SET last=?, last_text=?, last_uid=? WHERE id=?", now, (text || (poll ? "アンケート" : "写真")).slice(0, 60), me.id, g.id);
+        this.run("UPDATE groups SET last=?, last_text=?, last_uid=? WHERE id=?", now, (text || (poll ? "アンケート" : mediaLabel(imgs))).slice(0, 60), me.id, g.id);
         for (const uid of this.mentioned(text, { gid: g.id })) this.notify(uid, "mention", me.id, { gid: g.id, tid: id, text: snip(text) });
         return json({ id });
       }
@@ -924,7 +1017,7 @@ export class Hub extends DurableObject {
       if (!t || !this.member(t.gid, me.id)) throw new HttpError(404, "not_found");
       const b = await this.body(req);
       const text = str(b.text, 2e4);
-      const imgs = this.ownImgs(b.images, me.id);
+      const imgs = this.ownImgs(b.images, me.id, true);
       const stamp = b.stamp ? String(b.stamp) : null;
       if (stamp && !this.stampOk(stamp)) throw bad("stamp");
       if (!text && !imgs.length && !stamp) throw bad("empty");
@@ -946,13 +1039,13 @@ export class Hub extends DurableObject {
       const tell = (uid, kind) => {
         if (!uid || told.has(uid)) return;
         told.add(uid);
-        this.notify(uid, kind, me.id, { gid: t.gid, tid: t.id, text: snip(text, stamp ? "スタンプ" : "写真") });
+        this.notify(uid, kind, me.id, { gid: t.gid, tid: t.id, text: snip(text, stamp ? "スタンプ" : mediaLabel(imgs)) });
       };
       for (const uid of this.mentioned(text, { gid: t.gid })) tell(uid, "mention");
       tell(parentAuthor, "reply");
       tell(t.author, "comment");
       this.run("UPDATE threads SET ccount=ccount+1, last=? WHERE id=?", now, t.id);
-      this.run("UPDATE groups SET last=?, last_text=?, last_uid=? WHERE id=?", now, (text || (stamp && !imgs.length ? "スタンプ" : "写真")).slice(0, 60), me.id, t.gid);
+      this.run("UPDATE groups SET last=?, last_text=?, last_uid=? WHERE id=?", now, (text || (stamp && !imgs.length ? "スタンプ" : mediaLabel(imgs))).slice(0, 60), me.id, t.gid);
       return json({ id });
     }
     if ((m = path.match(/^\/api\/comments\/([a-f0-9]{20})$/)) && (M === "DELETE" || M === "PATCH")) {
@@ -1180,14 +1273,14 @@ export class Hub extends DurableObject {
         if (this.blockedPair(me.id, peer)) throw new HttpError(403, "blocked");
         this.rate("d:" + me.id, 600, 36e5);
         const text = str(b.text, 2e4);
-        const imgs = this.ownImgs(b.images, me.id);
+        const imgs = this.ownImgs(b.images, me.id, true);
         const stamp = b.stamp ? String(b.stamp) : null;
         if (stamp && !this.stampOk(stamp)) throw bad("stamp");
         if (!text && !imgs.length && !stamp) throw bad("empty");
         const id = rid(10);
         this.run("INSERT INTO dms(id,pk,author,body,imgs,stamp,ts) VALUES(?,?,?,?,?,?,?)", id, pk, me.id, text, JSON.stringify(imgs), stamp, Date.now());
         for (const uid of this.mentioned(text, { peer })) this.notify(uid, "mention", me.id, { peer: me.id, text: snip(text) });
-        this.pushTo(peer, "dm", { t: me.name, b: text ? str(text, 90) : stamp ? "スタンプを送りました" : "写真を送りました", u: `/#/dm/${me.id}`, g: `dm:${me.id}` });
+        this.pushTo(peer, "dm", { t: me.name, b: text ? str(text, 90) : stamp ? "スタンプを送りました" : mediaLabel(imgs) + "を送りました", u: `/#/dm/${me.id}`, g: `dm:${me.id}` });
         return json({ id });
       }
     }

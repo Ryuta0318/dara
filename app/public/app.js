@@ -294,21 +294,110 @@ function shrink(file, max, q, mime){
 }
 function shrinkAs(file, max, mime){ return shrink(file, max, 0.9, mime); }
 function uploadRaw(blob, type){ return api('/api/images', {raw:blob, type:type}).then(function(r){ return r.id; }); }
-function uploadAll(imgs){
+function uploadAll(imgs, onProgress){
   var ids = [];
   return imgs.reduce(function(p, im){
-    return p.then(function(){ return api('/api/images', {raw:im.blob, type:'image/jpeg'}).then(function(r){ ids.push(r.id); }); });
+    return p.then(function(){
+      if(im.video) return uploadVideo(im, onProgress).then(function(id){ ids.push(id); });
+      return api('/api/images', {raw:im.blob, type:'image/jpeg'}).then(function(r){ ids.push(r.id); });
+    });
   }, Promise.resolve()).then(function(){ return ids; });
 }
 function media(ids){
   if(!ids || !ids.length) return null;
-  var w = h('div', {class:'media n' + Math.min(ids.length, 4)});
+  var vids = ids.filter(isVideoId), pics = ids.filter(function(x){ return !isVideoId(x); });
+  if(!pics.length) return vids.length ? h('div', {class:'media vonly'}, vids.map(videoEl)) : null;
+  var w = h('div', {class:'media n' + Math.min(pics.length, 4)});
+  if(vids.length) return h('div', null, vids.map(videoEl), (function(){ fillPics(w, pics); return w; })());
+  fillPics(w, pics);
+  return w;
+}
+function fillPics(w, ids){
   ids.slice(0, 4).forEach(function(id){
     var im = h('img', {src:imgUrl(id), alt:'投稿の写真', loading:'lazy'});
     im.addEventListener('click', function(e){ e.stopPropagation(); lightbox(imgUrl(id)); });
     w.appendChild(im);
   });
-  return w;
+}
+
+/* ---------- 動画 ---------- */
+var VIDEO_MAX = 100 * 1024 * 1024;
+function isVideoId(id){ return typeof id === 'string' && id.indexOf('v:') === 0; }
+function videoUrl(id){ return '/api/videos/' + id.slice(2); }
+var vinfoCache = {};
+function videoInfo(id){
+  if(!(id in vinfoCache)) vinfoCache[id] = api(videoUrl(id) + '/info').catch(function(){ return null; });
+  return vinfoCache[id];
+}
+function fmtDur(s){ s = Math.round(s || 0); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+// 表紙（最初の1コマ）に ▶ を重ねて出し、タップでその場で再生する。同時に鳴るのは1本だけ
+function videoEl(id){
+  var box = h('div', {class:'vid', role:'button', tabindex:'0', 'aria-label':'動画を再生'});
+  var play = h('span', {class:'vplay', 'aria-hidden':'true'}, h('span', {class:'vtri'}));
+  var dur = h('span', {class:'vdur'});
+  box.appendChild(play); box.appendChild(dur);
+  videoInfo(id).then(function(inf){
+    if(!inf) return;
+    if(inf.w && inf.h) box.style.aspectRatio = inf.w + ' / ' + inf.h;
+    if(inf.poster){ var im = h('img', {class:'vposter', src:imgUrl(inf.poster), alt:'', loading:'lazy'}); box.insertBefore(im, box.firstChild); }
+    if(inf.dur) dur.textContent = fmtDur(inf.dur);
+  });
+  function start(e){
+    if(e){ e.stopPropagation(); e.preventDefault(); }
+    if(box.classList.contains('on')) return;
+    box.classList.add('on'); box.removeAttribute('role'); box.removeAttribute('tabindex');
+    var v = h('video', {src:videoUrl(id), controls:true, playsinline:true, preload:'auto'});
+    v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', '');
+    v.addEventListener('click', function(ev){ ev.stopPropagation(); });
+    v.addEventListener('play', function(){ document.querySelectorAll('.vid video').forEach(function(o){ if(o !== v) o.pause(); }); });
+    v.addEventListener('error', function(){ box.appendChild(h('div', {class:'verr'}, h('span', {text:'この端末では再生できない形式です'}), h('a', {href:videoUrl(id), target:'_blank', rel:'noopener', text:'ダウンロード', onclick:function(ev){ ev.stopPropagation(); }}))); });
+    box.innerHTML = ''; box.appendChild(v);
+    var p = v.play(); if(p && p.catch) p.catch(function(){});
+  }
+  box.addEventListener('click', start);
+  box.addEventListener('keydown', function(e){ if(e.key === 'Enter' || e.key === ' ') start(e); });
+  return box;
+}
+// 選んだ動画から、表紙（最初の1コマ）・縦横・長さを読む。読めない形式でも投稿はできる
+function videoMeta(file){
+  return new Promise(function(res){
+    var url = URL.createObjectURL(file), v = document.createElement('video'), done = false;
+    function fin(r){ if(done) return; done = true; URL.revokeObjectURL(url); res(r); }
+    v.muted = true; v.playsInline = true; v.preload = 'auto';
+    v.addEventListener('loadedmetadata', function(){ try{ v.currentTime = Math.min(0.2, (v.duration || 1) / 2); }catch(e){ fin({w:v.videoWidth, h:v.videoHeight, dur:v.duration}); } });
+    v.addEventListener('seeked', function(){
+      var W = v.videoWidth, H = v.videoHeight, sc = Math.min(1, 900 / Math.max(W, H) || 1);
+      var c = document.createElement('canvas'); c.width = Math.max(1, Math.round(W * sc)); c.height = Math.max(1, Math.round(H * sc));
+      try{ c.getContext('2d').drawImage(v, 0, 0, c.width, c.height); }catch(e){}
+      var dataUrl = c.toDataURL('image/jpeg', 0.8);
+      c.toBlob(function(b){ fin({w:W, h:H, dur:v.duration, poster:b, dataUrl:dataUrl}); }, 'image/jpeg', 0.8);
+    });
+    v.addEventListener('error', function(){ fin({}); });
+    setTimeout(function(){ fin({}); }, 8000);
+    v.src = url;
+  });
+}
+// 1.5MB ずつ送る（大きな動画でも1回の通信が重くならない）。onProgress(0〜1)
+async function uploadVideo(item, onProgress){
+  var f = item.file;
+  var type = ['video/mp4', 'video/quicktime', 'video/webm'].indexOf(f.type) >= 0 ? f.type : (/\.mov$/i.test(f.name) ? 'video/quicktime' : 'video/mp4');
+  var r = await api('/api/videos', {body:{mime:type, size:f.size}});
+  var parts = Math.ceil(f.size / r.part);
+  for(var n = 0; n < parts; n++){
+    var chunk = f.slice(n * r.part, Math.min(f.size, (n + 1) * r.part));
+    for(var tries = 0; ; tries++){
+      try{
+        var res = await fetch('/api/videos/' + r.id + '/' + n, {method:'PUT', headers:{'x-sr':'1', 'content-type':'application/octet-stream'}, credentials:'same-origin', body:chunk});
+        if(!res.ok) throw new Error('part');
+        break;
+      }catch(e){ if(tries >= 2) throw e; await new Promise(function(ok){ setTimeout(ok, 800 * (tries + 1)); }); }
+    }
+    if(onProgress) onProgress((n + 1) / parts);
+  }
+  var poster = null;
+  if(item.poster){ try{ poster = await uploadRaw(item.poster, 'image/jpeg'); }catch(e){} }
+  var d = await api('/api/videos/' + r.id + '/done', {body:{poster:poster, w:item.w || 0, h:item.h || 0, dur:item.dur || 0}});
+  return d.id;
 }
 
 /* ---------- composer ---------- */
@@ -316,8 +405,8 @@ function makeComposer(o){
   var imgs = [], busy = false;
   var ta = h('textarea', {class:'ta', rows:o.rows || 1, placeholder:o.placeholder, 'aria-label':o.placeholder});
   var thumbs = h('div', {class:'thumbs'});
-  var file = h('input', {type:'file', accept:'image/*', multiple:true, hidden:true});
-  var photoBtn = h('button', {type:'button', class:'icobtn', 'aria-label':'写真を追加', onclick:function(){ file.click(); }}, svgPhoto());
+  var file = h('input', {type:'file', accept:'image/*,video/*', multiple:true, hidden:true});
+  var photoBtn = h('button', {type:'button', class:'icobtn', 'aria-label':'写真・動画を追加', onclick:function(){ file.click(); }}, svgPhoto());
   var stampBtn = o.onStamp ? h('button', {type:'button', class:'icobtn', 'aria-label':'スタンプを送る', onclick:function(){
     window.DARAStampUI.openPicker(function(id, spec){
       if(spec) { var m = {}; m[id] = spec; cacheStamps(m); }
@@ -356,15 +445,24 @@ function makeComposer(o){
     var files = Array.prototype.slice.call(file.files).slice(0, 4 - imgs.length);
     file.value = '';
     for(var i = 0; i < files.length; i++){
-      try{ imgs.push(await shrink(files[i], 1600, 0.85)); }catch(e){ toast('画像を読み込めませんでした'); }
+      var f = files[i];
+      if(/^video\//.test(f.type) || /\.(mov|mp4|m4v|webm)$/i.test(f.name)){
+        if(imgs.some(function(x){ return x.video; })){ toast('動画は1つの投稿に1本までです'); continue; }
+        if(f.size > VIDEO_MAX){ toast('動画は100MBまでです（短く切ってから送ってください）'); continue; }
+        var meta = await videoMeta(f);
+        imgs.push({video:true, file:f, poster:meta.poster || null, dataUrl:meta.dataUrl || '', w:meta.w, h:meta.h, dur:meta.dur});
+        continue;
+      }
+      try{ imgs.push(await shrink(f, 1600, 0.85)); }catch(e){ toast('画像を読み込めませんでした'); }
     }
     drawThumbs(); sync();
   });
   function drawThumbs(){
     thumbs.innerHTML = '';
     imgs.forEach(function(im, i){
-      thumbs.appendChild(h('div', {class:'th'}, h('img', {src:im.dataUrl, alt:'添付する写真'}),
-        h('button', {type:'button', class:'thx', 'aria-label':'写真を外す', text:'×', onclick:function(){ imgs.splice(i, 1); drawThumbs(); sync(); }})));
+      thumbs.appendChild(h('div', {class:'th' + (im.video ? ' tv' : '')}, im.dataUrl ? h('img', {src:im.dataUrl, alt:im.video ? '添付する動画' : '添付する写真'}) : h('span', {class:'thblank'}),
+        im.video ? h('span', {class:'thv', text:'▶ ' + (im.dur ? fmtDur(im.dur) : '動画')}) : null,
+        h('button', {type:'button', class:'thx', 'aria-label':im.video ? '動画を外す' : '写真を外す', text:'×', onclick:function(){ imgs.splice(i, 1); drawThumbs(); sync(); }})));
     });
     thumbs.style.display = imgs.length ? 'flex' : 'none';
   }
@@ -372,7 +470,7 @@ function makeComposer(o){
     if(send.disabled) return;
     busy = true; send.textContent = '送信中'; sync();
     try{
-      var ids = imgs.length ? await uploadAll(imgs) : [];
+      var ids = imgs.length ? await uploadAll(imgs, function(r){ send.textContent = '送信中 ' + Math.round(r * 100) + '%'; }) : [];
       await o.onSubmit(ta.value.trim(), ids);
       ta.value = ''; ta.style.height = 'auto'; imgs = []; drawThumbs(); saveDraft(); sugg.style.display = 'none';
       busy = false; send.textContent = o.submitLabel; sync();
@@ -1714,7 +1812,12 @@ function profileView(id){
       threads.forEach(function(t){
         (t.images || []).forEach(function(im){
           n++;
-          grid.appendChild(h('button', {type:'button', class:'pcell', 'aria-label':'投稿を開く', onclick:function(){ location.hash = '#/t/' + t.id; }}, h('img', {src:imgUrl(im), alt:'', loading:'lazy'})));
+          var cell = h('button', {type:'button', class:'pcell', 'aria-label':'投稿を開く', onclick:function(){ location.hash = '#/t/' + t.id; }});
+          if(isVideoId(im)){
+            cell.appendChild(h('span', {class:'pcellv', text:'▶'}));
+            videoInfo(im).then(function(inf){ if(inf && inf.poster) cell.insertBefore(h('img', {src:imgUrl(inf.poster), alt:'', loading:'lazy'}), cell.firstChild); });
+          }else cell.appendChild(h('img', {src:imgUrl(im), alt:'', loading:'lazy'}));
+          grid.appendChild(cell);
         });
       });
       if(!n) grid.appendChild(h('div', {class:'pempty'}, h('div', {class:'pemptyic'}, svgPhoto()), h('b', {text:'写真つきの投稿はまだありません'})));
