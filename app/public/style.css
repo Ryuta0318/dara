@@ -215,6 +215,13 @@ h1,h2,h3{text-wrap:balance; margin:0}
 .rx.me{background:linear-gradient(#3a3450,#26223a); box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.55)}
 .rx.add{color:var(--sub); padding:4px 12px 4px 8px}
 .rx.add svg{width:20px; height:20px}
+/* スレッド一覧：💬 数・スタンプ・ピンを1行に */
+.rxbar.compact{align-items:center; gap:10px; margin-top:12px}
+.ccount{display:inline-flex; align-items:center; gap:6px; margin-right:8px; color:var(--sub); font-size:15px; font-weight:800}
+.ccount svg{width:24px; height:24px}
+.rx.icon{padding:7px 18px; justify-content:center}
+.rx.icon svg{width:24px; height:24px}
+.rx.pin svg{transform:rotate(40deg)}
 
 /* ---- スタンプのエディタ・選択 ---- */
 .sted{padding-bottom:6px}

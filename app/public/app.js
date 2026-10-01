@@ -485,7 +485,8 @@ function react(tgt, stamp, done){
 }
 function reactBar(p, o){
   if(!o.onReact) return null;
-  var bar = h('div', {class:'rxbar'});
+  var bar = h('div', {class:'rxbar' + (o.compact ? ' compact' : '')});
+  if(o.lead) bar.appendChild(o.lead);
   (p.reacts || []).forEach(function(r){
     var b = h('button', {type:'button', class:'rx' + (r.me ? ' me' : ''), 'aria-pressed':r.me ? 'true' : 'false', 'aria-label':'スタンプ ' + r.n + '人'}, stampEl(r.s, 26), h('span', {text:r.n}));
     var lp = null, longPressed = false;
@@ -495,7 +496,7 @@ function reactBar(p, o){
     b.addEventListener('click', function(e){ e.stopPropagation(); if(longPressed){ longPressed = false; return; } react(p.id, r.s, o.onReact); });
     bar.appendChild(b);
   });
-  var add = h('button', {type:'button', class:'rx add', 'aria-label':'スタンプをおす'}, svgSmile(), h('span', {text:'＋'}));
+  var add = h('button', {type:'button', class:'rx add' + (o.compact ? ' icon' : ''), 'aria-label':'スタンプをおす'}, svgSmile(), o.compact ? null : h('span', {text:'＋'}));
   add.addEventListener('click', function(e){
     e.stopPropagation();
     window.DARAStampUI.openPicker(function(id, spec){
@@ -504,7 +505,18 @@ function reactBar(p, o){
     });
   });
   bar.appendChild(add);
+  (o.tail || []).forEach(function(x){ if(x) bar.appendChild(x); });
   return bar;
+}
+// スレッド一覧のピン留めボタン（アイコンだけ。ピン留め中は色つき）
+function pinBtn(t, done){
+  var b = h('button', {type:'button', class:'rx icon pin' + (t.pinned ? ' me' : ''), 'aria-pressed':t.pinned ? 'true' : 'false', 'aria-label':t.pinned ? 'ピン留めを外す' : 'ピン留め'},
+    svgIcon('<path d="M12 17v5"></path><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"></path>', '22'));
+  b.addEventListener('click', async function(e){
+    e.stopPropagation();
+    try{ await api('/api/threads/' + t.id + '/pin', {body:{pinned:!t.pinned}}); toast(t.pinned ? 'ピン留めを外しました' : 'ピン留めしました'); if(done) done(); }catch(x){ toast(errMsg(x)); }
+  });
+  return b;
 }
 // リンクのプレビュー（タイトル・説明・画像）
 var pvCache = {};
@@ -576,8 +588,9 @@ function postEl(p, o){
     p.poll ? pollEl(p, o.onReact) : null,
     p.stamp ? h('div', {class:'stampbig'}, stampEl(p.stamp, 104)) : null,
     media(p.images),
-    o.count !== undefined ? h('div', {class:'meta', text:'コメント ' + o.count}) : null,
-    reactBar(p, o),
+    o.count !== undefined && !o.onReact ? h('div', {class:'meta', text:'コメント ' + o.count}) : null,
+    reactBar(p, o.count !== undefined ? {onReact:o.onReact, compact:true, tail:o.tail,
+      lead:h('span', {class:'ccount', 'aria-label':'コメント ' + o.count + '件'}, svgIcon('<path d="M21 11.5a8.4 8.4 0 0 1-12.2 7.5L3 21l2-5.6A8.4 8.4 0 1 1 21 11.5z"></path>', '24'), h('span', {text:o.count}))} : o),
     o.extra || null);
   var el = h('article', {class:'post' + (o.click ? ' tap' : '') + (o.big ? ' big' : '')}, h('div', {class:'sheen'}), avLink(p.author, 44), body);
   if(o.click){
@@ -1390,8 +1403,9 @@ function groupView(gid){
     if(!threads){ feed.appendChild(h('div', {class:'hint', style:'padding:16px 4px', text:'読み込み中'})); return; }
     if(!threads.length) feed.appendChild(h('div', {class:'hint', style:'padding:16px 4px', text:'最初のスレッドを立ててみましょう'}));
     threads.forEach(function(t){
+      var canPin = t.author === st.me.id || group.owner === st.me.id;
       feed.appendChild(postEl(t, {count:t.count, click:function(){ location.hash = '#/t/' + t.id; }, onReact:function(){ load(true); },
-        extra:postTools('thread', t, group.owner === st.me.id, {edit:function(){ load(true); }, del:function(){ load(true); }})}));
+        tail:[canPin ? pinBtn(t, function(){ load(true); }) : null]}));
     });
   }
   async function load(force){
