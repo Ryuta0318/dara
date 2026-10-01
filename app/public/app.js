@@ -190,7 +190,6 @@ function avatar(id, size){
   return h('div', {class:'orb av pal' + pal + (pal === 3 ? ' p3' : ''), style:'--s:' + size + 'px', 'aria-hidden':'true'}, (u.name || '?').trim().charAt(0).toUpperCase());
 }
 function tilt(el){
-  if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   el.addEventListener('pointermove', function(e){
     var r = el.getBoundingClientRect(), x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
     el.style.setProperty('--ry', ((x - .5) * 16) + 'deg'); el.style.setProperty('--rx', ((.5 - y) * 16) + 'deg');
@@ -845,7 +844,6 @@ function fillBanner(banner, group, o){
   banner.appendChild(o.preview ? h('span', {class:'back', text:'‹ 戻る'}) : h('button', {type:'button', class:'back', text:'‹ 戻る', onclick:o.onBack}));
   banner.appendChild(o.preview ? h('span', {class:'gear', 'aria-hidden':'true'}, svgGear())
     : h('button', {type:'button', class:'gear', 'aria-label':'部屋の設定', onclick:o.onSettings}, svgGear()));
-  banner.appendChild(S.roomChar(group, 84, true));
   var dc = h('div', {class:'decos', 'aria-hidden':'true'});
   (group.decos || []).slice(0, 4).forEach(function(id){ dc.appendChild(stampEl(id, 46)); });
   banner.appendChild(dc);
