@@ -239,35 +239,34 @@ function openPicker(onPick, opts){
 function oneMap(st){ var m = {}; m[st.id] = st.spec; return m; }
 
 /* ---- 部屋の見た目 ---- */
-var PATTERNS = ['なし', 'みずたま', 'しましま', 'きらきら', 'チェック'];
+var ACOLORS = ['#ffffff', '#ffd1e3', '#cfe0ff', '#c9f2df', '#fff0a8', '#e2d2ff', '#ffd9bd', '#d3d3d9'];
 function openRoomStyle(group, onSaved){
   var A = ui();
-  var cur = {name:group.name, color:group.color, ccolor:group.ccolor || null, face:group.face || 0, shape:(group.shape || 0) % S.CHAR_SHAPES, pattern:group.pattern || 0,
-    desc:group.desc || '', tfont:group.tfont || 0, banner:group.banner || null, decos:(group.decos || []).slice(0, 4)};
-  var pvStage = h('div', {class:'pvstage'}), pvModes = h('div', {class:'pvmodes'}), colorBox = h('div'), shapeBox = h('div', {class:'strip'}), faceBox = h('div', {class:'strip'}), patBox = h('div', {class:'chips'});
-  var fontBox = h('div'), bannerBox = h('div'), decoBox = h('div', {class:'decoslots'});
+  var cur = {name:group.name, color:group.color, ccolor:group.ccolor || null, animal:window.DARAAnimal.kindOf(group), acolor:group.acolor || null,
+    desc:group.desc || '', tfont:group.tfont || 0};
+  var pvStage = h('div', {class:'pvstage'}), pvModes = h('div', {class:'pvmodes'}), colorBox = h('div'), animalBox = h('div', {class:'strip'}), acolBox = h('div', {class:'swrow'});
+  var fontBox = h('div');
   var nameIn = h('input', {class:'field', type:'text', maxlength:'30', value:cur.name, 'aria-label':'部屋の名前'});
   var descIn = h('input', {class:'field', type:'text', maxlength:'60', value:cur.desc, placeholder:'この部屋のひとこと', 'aria-label':'この部屋のひとこと'});
   var close;
   function val(){ return cur.ccolor || cur.color; }
-  // 完成イメージ：実際の部屋の画面と同じ部品で描く。スクロールしても、ずっと上に出ている
-  var PVK = 'dara.pvmode', mode = 'banner';
-  try{ mode = localStorage.getItem(PVK) === 'tile' ? 'tile' : 'banner'; }catch(e){}
+  // 完成イメージ：実際の画面と同じ部品で描く。スクロールしても、ずっと上に出ている
+  var PVK = 'dara.pvmode', mode = 'card';
+  try{ mode = localStorage.getItem(PVK) === 'banner' ? 'banner' : 'card'; }catch(e){}
   function drawPreview(){
     var g = Object.assign({}, group, cur, {name:nameIn.value.trim() || '部屋の名前', desc:descIn.value.trim(), members:group.members || [], lastText:group.lastText || ''});
     pvStage.innerHTML = '';
     if(mode === 'banner'){
-      // 実物と同じ幅（スマホ幅）で描いてから、見える大きさに縮める。だから、配置も文字の折り返しも実物のまま
       var wrap = h('div', {class:'pvscale'}), b = A.fillBanner(h('div'), g, {preview:true});
       b.style.width = '390px'; wrap.appendChild(b); pvStage.appendChild(wrap);
       requestAnimationFrame(function(){
         var k = Math.min(1, pvStage.clientWidth / 390);
         b.style.transform = 'scale(' + k + ')'; wrap.style.height = Math.round(b.offsetHeight * k) + 'px';
       });
-    }else pvStage.appendChild(h('div', {class:'pvtile'}, A.tileEl(g, {preview:true})));
+    }else pvStage.appendChild(h('div', {class:'pvcard'}, A.cardEl(g, {preview:true})));
     pvModes.innerHTML = '';
     pvModes.appendChild(h('span', {class:'pvcap', text:'完成イメージ'}));
-    [['banner', '部屋の中'], ['tile', 'ホームのカード']].forEach(function(m){
+    [['card', 'ホームのカード'], ['banner', '部屋の中']].forEach(function(m){
       pvModes.appendChild(chip(m[1], mode === m[0], function(){ mode = m[0]; try{ localStorage.setItem(PVK, mode); }catch(e){} drawPreview(); }));
     });
   }
@@ -275,36 +274,16 @@ function openRoomStyle(group, onSaved){
     drawPreview();
     colorBox.innerHTML = '';
     colorBox.appendChild(swatchRow(val(), function(v){ if(S.hexOk(v)){ cur.ccolor = v; } else { cur.color = v; cur.ccolor = null; } draw(); }));
-    shapeBox.innerHTML = '';
-    for(var i = 0; i < S.CHAR_SHAPES; i++) (function(i){
-      shapeBox.appendChild(pick(S.roomChar({shape:i, color:cur.color, ccolor:cur.ccolor, face:-1}, 46), cur.shape === i, S.SHAPES[i].n, function(){ cur.shape = i; draw(); }));
-    })(i);
-    faceBox.innerHTML = '';
-    S.FACES.forEach(function(f, i){ faceBox.appendChild(pick(S.roomChar({shape:cur.shape, color:cur.color, ccolor:cur.ccolor, face:i}, 46), cur.face === i, f.n, function(){ cur.face = i; draw(); })); });
-    patBox.innerHTML = '';
-    PATTERNS.forEach(function(t, i){ patBox.appendChild(chip(t, cur.pattern === i, function(){ cur.pattern = i; draw(); })); });
+    animalBox.innerHTML = '';
+    window.DARAAnimal.NAMES.forEach(function(n, i){
+      animalBox.appendChild(pick(window.DARAAnimal.render(i, cur.acolor, 56), cur.animal === i, n, function(){ cur.animal = i; draw(); }));
+    });
+    acolBox.innerHTML = '';
+    ACOLORS.forEach(function(c, i){
+      var on = (cur.acolor || null) === (i ? c : null);
+      acolBox.appendChild(h('button', {type:'button', class:'sw' + (on ? ' on' : ''), 'aria-label':i ? 'キャラの色 ' + i : 'パールホワイト', style:'background:' + c, onclick:function(){ cur.acolor = i ? c : null; draw(); }}));
+    });
     fontBox.innerHTML = ''; fontBox.appendChild(fontChips(cur.tfont, function(i){ cur.tfont = i; draw(); }));
-    bannerBox.innerHTML = '';
-    bannerBox.appendChild(h('div', {class:'btnrow'},
-      h('button', {type:'button', class:'b3 soft sm', text:cur.banner ? '写真を変える' : '写真をえらぶ', onclick:async function(){
-        var id = await pickPhoto(1000, 'image/jpeg'); if(id){ cur.banner = id; draw(); }
-      }}),
-      cur.banner ? h('button', {type:'button', class:'b3 soft sm', text:'はずす', onclick:function(){ cur.banner = null; draw(); }}) : null));
-    decoBox.innerHTML = '';
-    for(var k = 0; k < 4; k++) (function(k){
-      var id = cur.decos[k];
-      var sp = id && S.resolve(id, A.stampCache());
-      var slot = h('div', {class:'dslot'});
-      var btn = h('button', {type:'button', class:'dbtn' + (sp ? '' : ' empty'), 'aria-label':'デコのスタンプ ' + (k + 1), onclick:function(){
-        openPicker(function(sid, spec){
-          if(spec){ var m = {}; m[sid] = spec; A.cacheStamps(m); }
-          cur.decos[k] = sid; cur.decos = cur.decos.filter(Boolean); draw();
-        }, {title:'デコにするスタンプ'});
-      }}, sp ? S.render(sp, 48) : h('span', {text:'＋'}));
-      slot.appendChild(btn);
-      if(sp) slot.appendChild(h('button', {type:'button', class:'dx', 'aria-label':'はずす', text:'×', onclick:function(){ cur.decos.splice(k, 1); draw(); }}));
-      decoBox.appendChild(slot);
-    })(k);
   }
   nameIn.addEventListener('input', drawPreview); descIn.addEventListener('input', drawPreview);
   var save = h('button', {type:'button', class:'b3 block', style:'margin-top:16px', text:'保存する'});
@@ -313,15 +292,14 @@ function openRoomStyle(group, onSaved){
     if(!name){ A.toast('部屋の名前を入れてください'); return; }
     save.disabled = true;
     try{
-      await A.api('/api/groups/' + group.id + '/style', {body:{name:name, color:cur.color, ccolor:cur.ccolor, face:cur.face, shape:cur.shape, pattern:cur.pattern,
-        desc:descIn.value.trim(), tfont:cur.tfont, banner:cur.banner, decos:cur.decos}});
+      await A.api('/api/groups/' + group.id + '/style', {body:{name:name, color:cur.color, ccolor:cur.ccolor, animal:cur.animal, acolor:cur.acolor,
+        desc:descIn.value.trim(), tfont:cur.tfont}});
       A.toast('部屋の見た目を変えました'); close(); if(onSaved) onSaved();
     }catch(e){ A.toast(A.errMsg(e)); save.disabled = false; }
   });
   var pvTop = h('div', {class:'pvtop'}, pvModes, pvStage);
-  var root = h('div', {class:'sted'}, sec('なまえ'), nameIn, sec('ひとこと'), descIn, sec('いろ'), colorBox, sec('はいけいの写真'), bannerBox,
-    sec('はいけいの模様'), patBox, sec('タイトルの書体'), fontBox, sec('かざりのスタンプ（4つまで）'), decoBox,
-    sec('キャラクターのかたち'), shapeBox, sec('キャラクターのかお'), faceBox, save);
+  var root = h('div', {class:'sted'}, sec('なまえ'), nameIn, sec('ひとこと'), descIn, sec('へやのいろ'), colorBox,
+    sec('キャラクター'), animalBox, sec('キャラクターのいろ'), acolBox, sec('タイトルの書体'), fontBox, save);
   close = A.openSheet('部屋をカスタマイズ', root, null, {top:pvTop});
   draw();
 }

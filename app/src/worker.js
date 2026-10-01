@@ -129,6 +129,8 @@ export class Hub extends DurableObject {
       "ALTER TABLE groups ADD COLUMN banner TEXT",
       "ALTER TABLE groups ADD COLUMN tfont INTEGER DEFAULT 0",
       "ALTER TABLE groups ADD COLUMN locked INTEGER DEFAULT 0",
+      "ALTER TABLE groups ADD COLUMN animal INTEGER",
+      "ALTER TABLE groups ADD COLUMN acolor TEXT",
       "ALTER TABLE threads ADD COLUMN edited INTEGER",
       "ALTER TABLE comments ADD COLUMN edited INTEGER",
       "ALTER TABLE users ADD COLUMN bio TEXT",
@@ -347,7 +349,7 @@ export class Hub extends DurableObject {
     } catch {}
     return {
       face: g.face || 0, shape: g.shape || 0, ccolor: g.ccolor || null, pattern: g.pattern || 0, desc: g.descr || "",
-      decos, banner: g.banner || null, tfont: g.tfont || 0, owner: g.owner, locked: !!g.locked,
+      decos, banner: g.banner || null, tfont: g.tfont || 0, animal: g.animal === null || g.animal === undefined ? null : g.animal, acolor: g.acolor || null, owner: g.owner, locked: !!g.locked,
     };
   }
 
@@ -636,6 +638,8 @@ export class Hub extends DurableObject {
       if (b.ccolor !== undefined) put("ccolor", b.ccolor === null ? null : HEX.test(String(b.ccolor)) ? String(b.ccolor).toLowerCase() : null);
       if (b.face !== undefined) put("face", cInt(b.face, 0, 11, 0));
       if (b.shape !== undefined) put("shape", cInt(b.shape, 0, 7, 0));
+      if (b.animal !== undefined) put("animal", b.animal === null ? null : cInt(b.animal, 0, 7, 0));
+      if (b.acolor !== undefined) put("acolor", b.acolor === null ? null : HEX.test(String(b.acolor)) ? String(b.acolor).toLowerCase() : null);
       if (b.pattern !== undefined) put("pattern", cInt(b.pattern, 0, 4, 0));
       if (b.tfont !== undefined) put("tfont", cInt(b.tfont, 0, 9, 0));
       if (b.banner !== undefined) put("banner", b.banner === null ? null : this.ownImgs([b.banner], me.id)[0] || null);

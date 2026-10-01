@@ -421,7 +421,7 @@ mark{background:rgba(255,225,120,.35); color:inherit; border-radius:4px; padding
 
 /* banner: character beside the title, never under the pills */
 .banner{min-height:240px; display:flex; flex-direction:column}
-.banner h1,.banner .bdesc{max-width:90%}
+.banner h1,.banner .bdesc{max-width:62%}
 .bfoot{margin-top:auto; padding-top:14px; position:relative; z-index:2}
 
 /* compact create / join */
@@ -501,3 +501,50 @@ mark{background:rgba(255,225,120,.35); color:inherit; border-radius:4px; padding
 @keyframes iword{0%{opacity:0; transform:scale(.3,.1)}45%{opacity:1; transform:scale(1.12,.86)}70%{transform:scale(.96,1.06)}100%{opacity:1; transform:none}}
 @keyframes ibright{0%,100%{filter:drop-shadow(0 12px 30px rgba(180,170,255,.25)) brightness(1)}50%{filter:drop-shadow(0 12px 40px rgba(200,190,255,.6)) brightness(1.35)}}
 .iword img{animation:ibright .9s ease 1.9s both}
+
+/* ===== 部屋カード（横にめくる）===== */
+.achar{display:inline-block; line-height:0}
+.achar svg{width:100%; height:100%; overflow:visible}
+.achar.bob{animation:bob 3s ease-in-out infinite}
+.rail{display:flex; gap:16px; overflow-x:auto; scroll-snap-type:x mandatory; margin:6px -16px 0; padding:10px calc((100% - min(78vw,320px))/2) 18px; -webkit-overflow-scrolling:touch; scrollbar-width:none; perspective:1000px}
+.rail::-webkit-scrollbar{display:none}
+.rcard{--c:#ffa6cc; --l:#ffe0ee; --d:#e0709f; position:relative; flex:0 0 min(78vw,320px); scroll-snap-align:center; min-height:470px; padding:22px 22px 22px; border-radius:68px 68px 62px 62px / 58px 58px 62px 62px; text-align:left; color:#17131f; cursor:pointer; display:flex; flex-direction:column;
+  background:radial-gradient(120% 70% at 28% 6%,rgba(255,255,255,.85),rgba(255,255,255,0) 55%),linear-gradient(172deg,var(--l) 0%,var(--c) 52%,var(--d) 130%);
+  box-shadow:inset 0 3px 0 rgba(255,255,255,.75),inset 0 -14px 24px rgba(0,0,0,.12),inset 0 0 0 1px rgba(255,255,255,.35),0 30px 50px -14px rgba(0,0,0,.65),0 0 60px -10px var(--c);
+  transition:transform .45s cubic-bezier(.2,1.1,.3,1), box-shadow .3s; animation:rise .7s cubic-bezier(.2,.9,.3,1.15) backwards}
+.rcard:nth-child(2){animation-delay:.08s}.rcard:nth-child(3){animation-delay:.16s}
+.rcard::before{content:""; position:absolute; left:6%; right:6%; bottom:-10px; height:40px; border-radius:0 0 50px 50px; background:var(--d); filter:saturate(.8); opacity:.6; z-index:-1}
+.rcard:active{transform:scale(.97,.96)}
+.rcard.dk{color:#fff}
+.ranimal{display:flex; justify-content:center; margin:2px 0 10px}
+.rno{font-size:12px; font-weight:800; letter-spacing:.16em; opacity:.75}
+.rname{font-size:44px; font-weight:900; line-height:1.08; letter-spacing:-.02em; margin:2px 0 8px; overflow-wrap:anywhere; text-wrap:balance}
+.rdesc{font-size:14px; font-weight:700; opacity:.85; line-height:1.5; min-height:42px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden}
+.rmem{display:flex; justify-content:space-between; align-items:center; margin:14px 0 10px; padding-top:12px; border-top:1px solid rgba(0,0,0,.12); font-size:14px; font-weight:800}
+.rcard.dk .rmem{border-color:rgba(255,255,255,.25)}
+.rmem b{font-size:18px}
+.rstack{display:flex; align-items:center; margin-bottom:18px; min-height:40px}
+.rstack .orb{margin-right:-8px; box-shadow:0 0 0 2px rgba(255,255,255,.7)}
+.rstack .more{margin-left:14px; font-weight:900; font-size:13px; opacity:.8}
+.rgo{margin-top:auto; display:block; text-align:center; padding:17px; border-radius:999px; font-weight:900; font-size:17px; color:#17131f;
+  background:linear-gradient(#fffdf8,#f1e6ef 60%,#e5d8e6); box-shadow:inset 0 2px 0 #fff,inset 0 -6px 10px rgba(150,120,160,.25),0 10px 18px rgba(0,0,0,.2)}
+.rcard:hover .rgo{animation:wob .6s}
+.rdots{display:flex; justify-content:center; gap:7px; margin:0 0 6px}
+.rdots i{width:7px; height:7px; border-radius:50%; background:rgba(255,255,255,.25); transition:all .3s cubic-bezier(.3,1.6,.5,1)}
+.rdots i.on{width:22px; border-radius:4px; background:#fff}
+.rcard.preview{pointer-events:none; animation:none; flex:none; width:300px; min-height:0; transform-origin:top center}
+.rcard.preview .rname{font-size:34px}
+.pvcard{display:flex; justify-content:center; padding:4px 0 10px}
+.pvcard .rcard{zoom:.62}
+
+/* 部屋の中のバナー：どうぶつ */
+.banner>.banimal{position:absolute; right:14px; top:54px; z-index:1}
+.banner.dk .rno{color:#fff}
+.hero3d{height:150px}
+.rcard{min-height:0; padding:16px 20px 20px}
+.rname{font-size:36px}
+.rdesc{min-height:0}
+.rmem{margin:10px 0 8px; padding-top:10px}
+.rstack{margin-bottom:14px}
+.rgo{margin-top:6px; padding:15px}
+.rail{padding-bottom:110px}

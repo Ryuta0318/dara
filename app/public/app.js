@@ -262,7 +262,7 @@ function lightbox(src){
   overlay.appendChild(lb);
 }
 
-window.DARAUI = {fillBanner:function(){ return fillBanner.apply(null, arguments); }, tileEl:function(){ return tileEl.apply(null, arguments); }, shrinkAs:shrinkAs, uploadRaw:uploadRaw, h:h, api:api, toast:toast, openSheet:openSheet, askConfirm:askConfirm, errMsg:errMsg, cacheStamps:cacheStamps, stampCache:function(){ return st.stamps; }};
+window.DARAUI = {fillBanner:function(){ return fillBanner.apply(null, arguments); }, cardEl:function(){ return roomCardEl.apply(null, arguments); }, shrinkAs:shrinkAs, uploadRaw:uploadRaw, h:h, api:api, toast:toast, openSheet:openSheet, askConfirm:askConfirm, errMsg:errMsg, cacheStamps:cacheStamps, stampCache:function(){ return st.stamps; }};
 
 /* ---------- images ---------- */
 function shrink(file, max, q, mime){
@@ -835,18 +835,15 @@ function svgGear(){
 }
 function fillBanner(banner, group, o){
   o = o || {};
-  var hasImg = !!group.banner;
-  banner.className = 'banner pt' + (group.pattern || 0) + (S.roomDark(group) || hasImg ? ' dk' : '') + (hasImg ? ' hasimg' : '') + (o.preview ? ' preview' : '');
-  banner.style.cssText = S.roomVars(group) + (hasImg ? ';--bimg:url(/api/images/' + group.banner + ')' : '');
+  banner.className = 'banner' + (S.roomDark(group) ? ' dk' : '') + (o.preview ? ' preview' : '');
+  banner.style.cssText = S.roomVars(group);
   banner.innerHTML = '';
   var stack = h('div', {class:'stack'});
   (group.members || []).slice(0, 5).forEach(function(id){ stack.appendChild(avatar(id, 34)); });
   banner.appendChild(o.preview ? h('span', {class:'back', text:'‹ 戻る'}) : h('button', {type:'button', class:'back', text:'‹ 戻る', onclick:o.onBack}));
   banner.appendChild(o.preview ? h('span', {class:'gear', 'aria-hidden':'true'}, svgGear())
     : h('button', {type:'button', class:'gear', 'aria-label':'部屋の設定', onclick:o.onSettings}, svgGear()));
-  var dc = h('div', {class:'decos', 'aria-hidden':'true'});
-  (group.decos || []).slice(0, 4).forEach(function(id){ dc.appendChild(stampEl(id, 46)); });
-  banner.appendChild(dc);
+  banner.appendChild(h('div', {class:'banimal'}, window.DARAAnimal.forRoom(group, 112, true)));
   banner.appendChild(h('h1', {text:group.name, style:S.fontStyle(group.tfont)}));
   if(group.desc) banner.appendChild(h('div', {class:'bdesc', text:group.desc}));
   var n = (group.members || []).length;
@@ -855,14 +852,24 @@ function fillBanner(banner, group, o){
     : h('div', {class:'pills'}, h('button', {type:'button', class:'pill', text:'探す', onclick:o.onSearch}), h('button', {type:'button', class:'pill', text:'メンバー ' + n + '人', onclick:o.onSettings}))));
   return banner;
 }
-function tileEl(g, o){
+// ホームで横にめくる、部屋のカード
+function roomCardEl(g, o){
   o = o || {};
-  var t = h('button', {type:'button', class:'tile' + (S.roomDark(g) || g.banner ? ' dk' : '') + (g.banner ? ' hasimg' : ''),
-    style:S.roomVars(g) + (g.banner ? ';--bimg:url(/api/images/' + g.banner + ')' : ''), onclick:o.onclick || null, tabindex:o.preview ? '-1' : null, 'aria-hidden':o.preview ? 'true' : null},
-    S.roomChar(g, 64, false), h('div', {class:'tname', text:g.name, style:S.fontStyle(g.tfont)}),
-    h('div', {class:'tfoot', text:(g.members || []).length + '人  ' + (g.lastText ? g.lastText : 'まだ投稿がありません')}));
-  if(!o.preview) tilt(t);
-  return t;
+  var mem = g.members || [], stack = h('div', {class:'rstack'});
+  mem.slice(0, 5).forEach(function(id){ stack.appendChild(avatar(id, 40)); });
+  if(mem.length > 5) stack.appendChild(h('span', {class:'more', text:'+' + (mem.length - 5)}));
+  var go = o.preview ? h('span', {class:'rgo', text:'部屋に入る'}) : h('span', {class:'rgo', text:'部屋に入る'});
+  var no = o.no || 1;
+  var c = h('div', {class:'rcard' + (S.roomDark(g) ? ' dk' : '') + (o.preview ? ' preview' : ''), style:S.roomVars(g), role:o.preview ? null : 'button', tabindex:o.preview ? '-1' : '0',
+      'aria-label':g.name + ' に入る', onclick:o.onclick || null},
+    h('div', {class:'ranimal'}, window.DARAAnimal.forRoom(g, 150, true)),
+    h('div', {class:'rno', text:'ROOM ' + (no < 10 ? '0' : '') + no}),
+    h('div', {class:'rname', text:g.name, style:S.fontStyle(g.tfont)}),
+    h('div', {class:'rdesc', text:g.desc || (g.lastText ? g.lastText : 'まだ投稿がありません')}),
+    h('div', {class:'rmem'}, h('span', {text:'members'}), h('b', {text:mem.length + '人'})),
+    stack, go);
+  if(o.onclick && !o.preview) c.addEventListener('keydown', function(e){ if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); o.onclick(); } });
+  return c;
 }
 
 /* ---------- home ---------- */
@@ -908,11 +915,21 @@ function homeView(tab){
       body.appendChild(h('div', {class:'empty'}, orb(96, 0, {bob:true}),
         h('p', {text:'部屋をつくるか、もらったコードで入りましょう'})));
     }
-    var grid = h('div', {class:'grid'});
-    groups.forEach(function(g){
-      grid.appendChild(tileEl(g, {onclick:function(){ location.hash = '#/g/' + g.id; }}));
+    var rail = h('div', {class:'rail'}), dots = h('div', {class:'rdots'});
+    groups.forEach(function(g, i){
+      rail.appendChild(roomCardEl(g, {no:i + 1, onclick:function(){ location.hash = '#/g/' + g.id; }}));
+      dots.appendChild(h('i', {class:i ? '' : 'on'}));
     });
-    body.appendChild(grid);
+    var tick = 0;
+    rail.addEventListener('scroll', function(){
+      cancelAnimationFrame(tick);
+      tick = requestAnimationFrame(function(){
+        var c = rail.firstChild; if(!c) return;
+        var i = Math.round(rail.scrollLeft / (c.offsetWidth + 16));
+        Array.prototype.forEach.call(dots.children, function(d, k){ d.className = k === i ? 'on' : ''; });
+      });
+    });
+    body.appendChild(rail); if(groups.length > 1) body.appendChild(dots);
   }
   function buildFriends(){
     var found = [], lastQ = null, timer;
@@ -1133,7 +1150,7 @@ function groupInfoSheet(gid, info){
     box.innerHTML = '';
     var code = G.code, gname = G.name;
     box.appendChild(h('button', {type:'button', class:'b3 soft block', disabled:!canStyle,
-      text:canStyle ? '部屋の見た目を変える（名前・色・デコ）' : '見た目はオーナーだけが変えられます', onclick:function(){
+      text:canStyle ? '部屋の見た目を変える（名前・色・キャラ）' : '見た目はオーナーだけが変えられます', onclick:function(){
       close(); window.DARAStampUI.openRoomStyle(G, function(){ if(info) info(); });
     }}));
     box.appendChild(h('div', {class:'lbl', text:'招待コード'}));
@@ -1429,7 +1446,7 @@ function joinView(code){
     var g = r.group;
     cacheStamps(r.stamps);
     body.innerHTML = '';
-    body.appendChild(S.roomChar(g, 128, true));
+    body.appendChild(h('div', {style:'display:grid;place-items:center;margin-bottom:6px'}, window.DARAAnimal.forRoom(g, 160, true)));
     body.appendChild(h('div', {class:'hint', text:'この部屋に招待されています'}));
     body.appendChild(h('div', {style:'font-weight:900;font-size:24px', text:g.name}));
     body.appendChild(h('div', {class:'hint', text:g.count + '人がいます'}));
