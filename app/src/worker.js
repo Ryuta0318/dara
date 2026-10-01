@@ -649,7 +649,7 @@ export class Hub extends DurableObject {
       const u = this.one("SELECT id,handle,name,color,avatar,bio,animal FROM users WHERE id=?", m[1]);
       if (!u || this.blockedPair(me.id, u.id)) throw new HttpError(404, "not_found");
       const rel = this.relation(me.id, u.id);
-      const common = this.q("SELECT g.id id, g.name name FROM groups g JOIN gm a ON a.gid=g.id AND a.uid=? JOIN gm b ON b.gid=g.id AND b.uid=?", me.id, u.id);
+      const common = this.q("SELECT g.* FROM groups g JOIN gm a ON a.gid=g.id AND a.uid=? JOIN gm b ON b.gid=g.id AND b.uid=?", me.id, u.id).map((g) => ({ id: g.id, name: g.name, color: g.color, ...this.groupStyle(g) }));
       if (rel === "none" && !common.length) throw new HttpError(404, "not_found");
       if (!m[2]) {
         const posts = this.one("SELECT COUNT(*) c FROM threads t JOIN gm ON gm.gid=t.gid AND gm.uid=? WHERE t.author=?", me.id, u.id).c;

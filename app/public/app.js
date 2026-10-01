@@ -1624,24 +1624,33 @@ function joinView(code){
 }
 
 /* ---------- router ---------- */
-/* ---------- profile page (X-like) ---------- */
+/* ---------- profile page (Instagram-like) ---------- */
+function roomCircle(g, onclick){
+  var p = S.palOf(g.ccolor || g.color || 0);
+  return h('button', {type:'button', class:'hl', onclick:onclick, 'aria-label':g.name},
+    h('span', {class:'hlring', style:'--c:' + p.c + ';--l:' + p.l + ';--d:' + p.d}, h('span', {class:'hlin'}, window.DARAAnimal.forRoom(g, 54, false))),
+    h('small', {text:g.name}));
+}
 function profileView(id){
   if(id === 'me') id = st.me.id;
-  var body = h('div'), feed = h('div', {class:'feed'}), data = null, threads = [], more = false, loadingMore = false, err = false;
-  var el = h('div', {class:'page'},
-    h('header', {class:'top'}, h('button', {type:'button', class:'hbtn', 'aria-label':'戻る', text:'‹', onclick:function(){ if(history.length > 1) history.back(); else location.hash = '#/'; }}), refreshBtn(function(){ return Promise.all([loadProfile(), loadPosts(true)]); })), body);
-  function relBtns(){
-    var rel = data.rel, row = h('div', {class:'pact'});
+  var body = h('div'), feed = h('div', {class:'feed'}), grid = h('div', {class:'pgrid'}), data = null, threads = [], more = false, loadingMore = false, err = false, tab = 'posts', myRooms = null;
+  var title = h('div', {class:'ptitle2', text:''});
+  var el = h('div', {class:'page profile'},
+    h('header', {class:'top ptop'}, h('button', {type:'button', class:'hbtn', 'aria-label':'戻る', text:'‹', onclick:function(){ if(history.length > 1) history.back(); else location.hash = '#/'; }}), title,
+      refreshBtn(function(){ return Promise.all([loadProfile(), loadPosts(true)]); })), body);
+  function actions(){
+    var rel = data.rel, row = h('div', {class:'pact2'});
     if(rel === 'self'){
-      row.appendChild(h('button', {type:'button', class:'b3 sm', text:'プロフィールを編集', onclick:function(){ profileSheet(function(){ loadProfile(); }); }}));
-      row.appendChild(h('button', {type:'button', class:'b3 sm soft', text:'設定', onclick:settingsSheet}));
+      row.appendChild(h('button', {type:'button', class:'pbtn', text:'プロフィールを編集', onclick:function(){ profileSheet(function(){ loadProfile(); }); }}));
+      row.appendChild(h('button', {type:'button', class:'pbtn', text:'設定', onclick:settingsSheet}));
       return row;
     }
     function act(path){ return async function(){ try{ await api(path, {body:{id:id}}); loadProfile(); }catch(e){ toast(errMsg(e)); } }; }
-    if(rel === 'none') row.appendChild(h('button', {type:'button', class:'b3 sm', text:'友達申請', onclick:act('/api/friends/request')}));
-    else if(rel === 'incoming') row.appendChild(h('button', {type:'button', class:'b3 sm', text:'承認する', onclick:act('/api/friends/accept')}));
-    else if(rel === 'sent') row.appendChild(h('span', {class:'hint', text:'申請中'}));
-    if(rel === 'friend') row.appendChild(h('button', {type:'button', class:'b3 sm', text:'メッセージ', onclick:function(){ location.hash = '#/dm/' + id; }}));
+    if(rel === 'none') row.appendChild(h('button', {type:'button', class:'pbtn main', text:'友達申請', onclick:act('/api/friends/request')}));
+    else if(rel === 'incoming') row.appendChild(h('button', {type:'button', class:'pbtn main', text:'承認する', onclick:act('/api/friends/accept')}));
+    else if(rel === 'sent') row.appendChild(h('button', {type:'button', class:'pbtn', text:'申請中', disabled:true}));
+    else if(rel === 'friend') row.appendChild(h('button', {type:'button', class:'pbtn', text:'友達', disabled:true}));
+    if(rel === 'friend') row.appendChild(h('button', {type:'button', class:'pbtn main', text:'メッセージ', onclick:function(){ location.hash = '#/dm/' + id; }}));
     return row;
   }
   function drawHead(){
@@ -1649,31 +1658,55 @@ function profileView(id){
     if(err){ body.appendChild(h('div', {class:'hint', style:'padding:30px 4px;text-align:center', text:'このプロフィールは見られません'})); return; }
     if(!data){ body.appendChild(h('div', {class:'hint', text:'読み込み中'})); return; }
     var u = data.user, c = data.counts;
-    body.appendChild(h('div', {class:'pfTop'},
-      h('div', {class:'pfAv'}, h('i', {class:'sp s1', text:'✦'}), h('i', {class:'sp s2', text:'✦'}), h('div', {class:'pfRing'}, avatar(u.id, 120))),
-      h('div', {class:'pfName', text:u.name}), h('div', {class:'pfId', text:'@' + u.handle})));
-    if(u.bio) body.appendChild(h('div', {class:'pbio'}, richText(u.bio)));
-    else if(data.rel === 'self') body.appendChild(h('div', {class:'pbio empty', text:'自己紹介を書いてみましょう（長さの制限はありません）'}));
-    body.appendChild(h('div', {class:'pstats'},
-      h('div', null, h('b', {text:c.posts}), h('small', {text:'投稿'})), h('div', null, h('b', {text:c.friends}), h('small', {text:'友達'})), h('div', null, h('b', {text:c.groups}), h('small', {text:data.rel === 'self' ? '部屋' : '同じ部屋'}))));
-    body.appendChild(relBtns());
-    if(data.common && data.common.length){
-      var chips = h('div', {class:'chips', style:'justify-content:center'});
-      data.common.forEach(function(g){ chips.appendChild(h('button', {type:'button', class:'chip', text:g.name, onclick:function(){ location.hash = '#/g/' + g.id; }})); });
-      body.appendChild(chips);
-    }
-    body.appendChild(h('h2', {class:'sec big', style:'margin-top:22px', text:'投稿'}));
-    body.appendChild(feed);
+    title.textContent = u.handle;
+    body.appendChild(h('div', {class:'pr1'},
+      h('div', {class:'pavwrap'}, h('div', {class:'pavring'}, avatar(u.id, 86))),
+      h('div', {class:'pr1r'},
+        h('div', {class:'pname', text:u.name}),
+        h('div', {class:'pnums'},
+          h('div', null, h('b', {text:c.posts}), h('small', {text:'投稿'})),
+          h('div', null, h('b', {text:c.friends}), h('small', {text:'友達'})),
+          h('div', null, h('b', {text:c.groups}), h('small', {text:data.rel === 'self' ? '部屋' : '同じ部屋'}))))));
+    if(u.bio) body.appendChild(h('div', {class:'pbio2'}, richText(u.bio)));
+    else if(data.rel === 'self') body.appendChild(h('div', {class:'pbio2 empty', text:'自己紹介を書いてみましょう（長さの制限はありません）'}));
+    body.appendChild(actions());
+    // 部屋（ストーリーのハイライトのような丸）
+    var rooms = data.rel === 'self' ? (myRooms || []) : (data.common || []);
+    var hls = h('div', {class:'hls'});
+    if(data.rel === 'self') hls.appendChild(h('button', {type:'button', class:'hl new', onclick:startSheet, 'aria-label':'部屋をはじめる'}, h('span', {class:'hlring'}, h('span', {class:'hlin plus', text:'+'})), h('small', {text:'新規'})));
+    rooms.forEach(function(g){ hls.appendChild(roomCircle(g, function(){ location.hash = '#/g/' + g.id; })); });
+    if(hls.children.length) body.appendChild(hls);
+    // タブ
+    var tabs = h('div', {class:'ptabs', role:'tablist'});
+    [['posts', '投稿', '<rect x="3" y="4" width="18" height="6" rx="2"></rect><rect x="3" y="14" width="18" height="6" rx="2"></rect>'], ['photos', '写真', '<rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect>']].forEach(function(t){
+      tabs.appendChild(h('button', {type:'button', role:'tab', 'aria-selected':tab === t[0] ? 'true' : 'false', 'aria-label':t[1], class:'ptab' + (tab === t[0] ? ' on' : ''), onclick:function(){ tab = t[0]; drawHead(); }}, svgIcon(t[2], '24')));
+    });
+    body.appendChild(tabs);
+    body.appendChild(tab === 'posts' ? feed : grid);
     drawFeed();
   }
   function drawFeed(){
-    feed.innerHTML = '';
-    if(!threads.length && !more) feed.appendChild(h('div', {class:'hint', style:'padding:14px 4px', text:'まだ投稿がありません'}));
-    threads.forEach(function(t){
-      feed.appendChild(postEl(t, {count:t.count, click:function(){ location.hash = '#/t/' + t.id; }, onReact:function(){ loadPosts(true); },
-        extra:h('button', {type:'button', class:'roomtag', text:'# ' + t.gname, onclick:function(e){ e.stopPropagation(); location.hash = '#/g/' + t.gid; }})}));
-    });
-    if(more) feed.appendChild(h('button', {type:'button', class:'b3 soft block', text:loadingMore ? '読み込み中' : 'もっと見る', disabled:loadingMore, onclick:function(){ loadPosts(false); }}));
+    feed.innerHTML = ''; grid.innerHTML = '';
+    if(!threads.length && !more){
+      var empty = h('div', {class:'pempty'}, h('div', {class:'pemptyic'}, svgIcon('<path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path>', '34')), h('b', {text:'まだ投稿がありません'}), h('small', {text:data && data.rel === 'self' ? '部屋で最初の投稿をしてみましょう' : ''}));
+      (tab === 'posts' ? feed : grid).appendChild(empty); return;
+    }
+    if(tab === 'posts'){
+      threads.forEach(function(t){
+        feed.appendChild(postEl(t, {count:t.count, click:function(){ location.hash = '#/t/' + t.id; }, onReact:function(){ loadPosts(true); },
+          extra:h('button', {type:'button', class:'roomtag', text:'# ' + t.gname, onclick:function(e){ e.stopPropagation(); location.hash = '#/g/' + t.gid; }})}));
+      });
+    }else{
+      var n = 0;
+      threads.forEach(function(t){
+        (t.images || []).forEach(function(im){
+          n++;
+          grid.appendChild(h('button', {type:'button', class:'pcell', 'aria-label':'投稿を開く', onclick:function(){ location.hash = '#/t/' + t.id; }}, h('img', {src:imgUrl(im), alt:'', loading:'lazy'})));
+        });
+      });
+      if(!n) grid.appendChild(h('div', {class:'pempty'}, h('div', {class:'pemptyic'}, svgPhoto()), h('b', {text:'写真つきの投稿はまだありません'})));
+    }
+    if(more) (tab === 'posts' ? feed : grid).appendChild(h('button', {type:'button', class:'b3 soft block', style:'grid-column:1/-1', text:loadingMore ? '読み込み中' : 'もっと見る', disabled:loadingMore, onclick:function(){ loadPosts(false); }}));
   }
   async function loadPosts(reset){
     if(loadingMore) return; loadingMore = true;
@@ -1689,6 +1722,7 @@ function profileView(id){
     try{
       var r = await api('/api/profile/' + id);
       data = r; cacheUsers(oneU(r.user)); if(r.user.id === st.me.id){ st.me = Object.assign({}, st.me, r.user); }
+      if(r.rel === 'self'){ try{ var g = await api('/api/groups'); myRooms = g.groups; cacheUsers(g.users); cacheStamps(g.stamps); }catch(e2){} }
       drawHead(); if(!threads.length) loadPosts(true);
     }catch(e){ err = true; drawHead(); }
   }

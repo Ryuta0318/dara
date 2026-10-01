@@ -1008,3 +1008,57 @@ html{overscroll-behavior-y:contain}
 .hbtn.refresh.spin svg{animation:spinr .8s linear infinite}
 .top .hbtn.refresh,.tbar .hbtn.refresh{margin-left:auto}
 .tbar{display:flex; align-items:center; gap:8px}
+
+/* ===== 投稿が横にはみ出す不具合の修正 ===== */
+.post{grid-template-columns:44px minmax(0,1fr) !important}
+.post>div{min-width:0}
+.post .ptxt,.post .who{overflow-wrap:anywhere; word-break:break-word}
+.lnk{word-break:break-all; overflow-wrap:anywhere}
+.lpv,.lpcard{max-width:100%; min-width:0}
+.lpt{min-width:0}
+.lpt b,.lpt small,.lpt span{overflow-wrap:anywhere; word-break:break-word}
+.lpimg{max-width:100%}
+.feed{max-width:100%}
+
+/* ===== プロフィール（Instagram風）===== */
+.profile{padding-left:16px; padding-right:16px}
+.ptop{display:flex; align-items:center; gap:8px}
+.ptitle2{flex:1; text-align:center; font-weight:900; font-size:17px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.pr1{display:flex; align-items:center; gap:22px; padding:10px 4px 6px}
+.pavwrap{flex:none}
+.pavring{padding:4px; border-radius:50%; background:linear-gradient(145deg,#ffd3e6,#ff9ec6 60%,#c9b3ff); box-shadow:0 5px 0 #7c6fb0,0 14px 18px rgba(0,0,0,.45)}
+.pavring .orb,.pavring .avimg,.pavring .avanimal{box-shadow:0 0 0 3px #0f0e13}
+.pr1r{flex:1; min-width:0}
+.pname{font-size:19px; font-weight:900; line-height:1.3; margin-bottom:10px; overflow-wrap:anywhere}
+.pnums{display:flex; justify-content:space-between; gap:6px}
+.pnums>div{text-align:center; min-width:0}
+.pnums b{display:block; font-size:19px; font-weight:900; line-height:1.2}
+.pnums small{color:var(--sub); font-weight:700; font-size:12px; white-space:nowrap}
+.pbio2{margin:10px 4px 4px; white-space:pre-wrap; line-height:1.7; font-size:14.5px; overflow-wrap:anywhere}
+.pbio2.empty{color:var(--sub)}
+.pact2{display:flex; gap:10px; margin:14px 0 6px}
+.pbtn{flex:1; padding:11px 8px; border-radius:14px; font-weight:900; font-size:14px; color:var(--ink); cursor:pointer;
+  background:var(--slab-dark); box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 4px 0 #000,0 10px 12px rgba(0,0,0,.4); transition:transform .08s,box-shadow .08s; margin-bottom:5px}
+.pbtn.main{background:linear-gradient(#ffc4d8,#f59bbd); color:#1b1a22; box-shadow:inset 0 2px 0 rgba(255,255,255,.7),0 4px 0 #c96f93,0 10px 12px rgba(0,0,0,.4)}
+.pbtn:active:not(:disabled){transform:translateY(4px); box-shadow:0 0 0 #000}
+.pbtn:disabled{opacity:.6}
+.hls{display:flex; gap:16px; overflow-x:auto; padding:14px 4px 10px; scrollbar-width:none}
+.hls::-webkit-scrollbar{display:none}
+.hl{flex:none; width:68px; display:flex; flex-direction:column; align-items:center; gap:6px; cursor:pointer}
+.hlring{width:64px; height:64px; border-radius:50%; padding:3px; display:grid; place-items:center; background:linear-gradient(145deg,var(--l,#444),var(--c,#333) 60%,var(--d,#222)); box-shadow:0 4px 0 rgba(0,0,0,.6),0 8px 10px rgba(0,0,0,.4)}
+.hlin{width:100%; height:100%; border-radius:50%; background:#15141a; display:grid; place-items:end center; overflow:hidden; box-shadow:inset 0 0 0 2px #0f0e13}
+.hlin .achar{margin-bottom:-4px}
+.hlin.plus{place-items:center; font-size:30px; font-weight:300; color:var(--sub)}
+.hl.new .hlring{background:#2a2930; --c:#2a2930}
+.hl small{font-size:11px; font-weight:800; max-width:68px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ink)}
+.ptabs{display:flex; margin:10px -16px 14px; border-bottom:1px solid var(--line)}
+.ptab{flex:1; display:grid; place-items:center; padding:12px 0; color:var(--sub); border-bottom:2px solid transparent; margin-bottom:-1px; cursor:pointer; transition:color .2s}
+.ptab.on{color:var(--ink); border-bottom-color:var(--ink)}
+.pgrid{display:grid; grid-template-columns:repeat(3,1fr); gap:3px; margin:0 -16px}
+.pcell{aspect-ratio:1; overflow:hidden; background:#15141a; padding:0}
+.pcell img{width:100%; height:100%; object-fit:cover; display:block}
+.pempty{display:flex; flex-direction:column; align-items:center; gap:8px; padding:46px 20px; text-align:center; grid-column:1/-1}
+.pemptyic{width:78px; height:78px; border-radius:50%; display:grid; place-items:center; color:var(--ink); box-shadow:inset 0 0 0 2px var(--ink)}
+.pempty b{font-size:20px; font-weight:900}.pempty small{color:var(--sub); font-weight:700}
+.profile .feed{margin-top:0}
+.pbio2{text-align:left}
