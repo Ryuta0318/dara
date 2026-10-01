@@ -621,3 +621,64 @@ mark{background:rgba(255,225,120,.35); color:inherit; border-radius:4px; padding
 .bigopt .bt b{font-size:17px}.bigopt .bt small{font-size:12px; opacity:.75; font-weight:700}
 .bigopt .chev{font-size:26px; opacity:.6}
 .achar.photo{align-self:flex-start}
+
+/* ===== 完成イメージ（友達・メッセージ・通知・部屋の設定）===== */
+.roundplus{width:46px; height:46px; border-radius:50%; font-size:28px; font-weight:700; line-height:1; color:#17131f; cursor:pointer;
+  background:linear-gradient(#fbf7ff,#d7caf2); box-shadow:inset 0 2px 0 #fff,inset 0 -4px 8px rgba(120,100,170,.3),0 8px 16px rgba(0,0,0,.4); transition:transform .2s cubic-bezier(.2,1.5,.4,1)}
+.roundplus:active{transform:scale(.88) rotate(90deg)}
+.sbox{display:flex; align-items:center; gap:10px; padding:0 16px; height:48px; margin:6px 0 14px; border-radius:999px; background:var(--card); box-shadow:inset 0 0 0 1px var(--line); color:var(--sub)}
+.sfield{flex:1; min-width:0; height:100%; background:none; border:0; outline:0; color:var(--ink); font-size:15px; font-family:inherit}
+.sfield::placeholder{color:var(--sub)}
+.panel{background:var(--card); border-radius:26px; padding:14px 14px 12px; margin:0 0 14px; box-shadow:inset 0 1px 0 var(--edge),inset 0 0 0 1px var(--line)}
+.ptitle{font-size:15px; font-weight:900; margin-bottom:10px}
+.prow{display:flex; justify-content:space-between; align-items:center}
+.plink{color:var(--sub); font-size:12px; font-weight:800; cursor:pointer}
+.puffies{display:flex; gap:10px}
+.puffy{flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; padding:12px 6px; border-radius:22px; font-size:12px; font-weight:900; color:#17131f; cursor:pointer;
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.85),inset 0 -6px 10px rgba(0,0,0,.1),0 8px 14px rgba(0,0,0,.35); transition:transform .2s cubic-bezier(.2,1.5,.4,1)}
+.puffy:active{transform:scale(.92)}
+.puffy .pi{font-size:22px; font-weight:900; line-height:1}
+.puffy.lav{background:linear-gradient(#ece4ff,#b9a6f0)}
+.puffy.pink{background:linear-gradient(#ffe3ee,#ffa8c8)}
+.puffy.sky{background:linear-gradient(#e3efff,#a7cbff)}
+.puffy.wide{flex:1.4}
+.kebab{width:34px; height:40px; font-size:22px; font-weight:900; color:var(--sub); cursor:pointer}
+.pillbtn{border-radius:999px !important; background:linear-gradient(#fffdfa,#e8dcf0) !important; color:#17131f !important}
+.dmhero{display:flex; align-items:center; gap:14px; width:100%; padding:14px 16px; margin:4px 0 14px; border-radius:28px; text-align:left; color:var(--ink); cursor:pointer;
+  background:linear-gradient(135deg,#3a3350,#252233); box-shadow:inset 0 1px 0 rgba(255,255,255,.2),inset 0 0 0 1px var(--line)}
+.dmh-ic{width:56px; height:56px; border-radius:50%; display:grid; place-items:center; font-size:26px; background:linear-gradient(#fff,#ffd3e3); color:#e0709f; flex:none}
+.dmh-t{flex:1; display:flex; flex-direction:column; gap:2px}
+.dmh-t b{font-size:15px}.dmh-t small{color:var(--sub); font-size:12px; font-weight:600}
+.dmhero .chev{font-size:26px; color:var(--sub)}
+.dot2{background:linear-gradient(#ff8fb3,#ff5c8a)}
+
+/* 通知 */
+.readall{display:flex; justify-content:flex-end; margin-bottom:-6px}
+.readall .pillbtn{padding:8px 16px; font-size:12px; font-weight:900; cursor:pointer}
+.nrow{background:var(--card); margin-bottom:8px; border-radius:22px; padding:12px 14px; position:relative}
+.nrow.new{background:linear-gradient(135deg,#2c2838,#241f30)}
+.nic2{font-size:18px; color:#ff8fb3; width:26px; text-align:center}
+.ndot{width:9px; height:9px; border-radius:50%; background:#ff5c8a; box-shadow:0 0 8px #ff5c8a}
+
+/* 部屋の設定 */
+.wchev{position:absolute; right:16px; top:50%; transform:translateY(-50%); font-size:28px; opacity:.7}
+.wcard.big{position:relative; margin-bottom:14px}
+.mstrip{display:flex; gap:10px; overflow-x:auto; scrollbar-width:none; padding-bottom:4px}
+.mcell{display:flex; flex-direction:column; align-items:center; gap:4px; min-width:54px}
+.mcell small{font-size:11px; color:var(--sub); font-weight:700; max-width:58px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.mmore{width:50px; height:50px; border-radius:50%; display:grid; place-items:center; background:rgba(255,255,255,.1); font-weight:900; font-size:13px}
+.codepill{text-align:center; font:900 24px/1 ui-monospace,Menlo,Consolas,monospace; letter-spacing:.14em; padding:16px 8px; border-radius:20px; background:var(--field); box-shadow:inset 0 0 0 1px var(--line); margin-bottom:12px; user-select:all}
+.panel .hint{margin-top:10px}
+.menurow{display:flex; align-items:center; gap:12px; width:100%; padding:14px 14px; margin-bottom:14px; border-radius:22px; background:var(--card); color:var(--ink); font-weight:800; font-size:15px; text-align:left; cursor:pointer; box-shadow:inset 0 0 0 1px var(--line)}
+.menurow .mtt{flex:1}.menurow .chev{color:var(--sub); font-size:22px}
+.menurow:disabled{opacity:.5}
+
+/* カスタマイズのタブ */
+.segtabs{display:flex; gap:4px; padding:4px; margin:0 0 12px; border-radius:999px; background:var(--card); box-shadow:inset 0 0 0 1px var(--line)}
+.seg{flex:1; padding:10px 0; border-radius:999px; font-size:14px; font-weight:900; color:var(--sub); cursor:pointer; transition:all .25s}
+.seg.on{background:linear-gradient(#fff,#e2d6f2); color:#17131f; box-shadow:0 4px 10px rgba(0,0,0,.35)}
+
+/* 投稿をカードに */
+.post{background:var(--card); border-radius:26px; padding:14px 14px 10px; margin:10px 0; border-bottom:0; box-shadow:inset 0 1px 0 var(--edge),inset 0 0 0 1px var(--line)}
+.entry{background:var(--card2,var(--card)); box-shadow:inset 0 0 0 1px var(--line)}
+.wcard.big .wname{font-size:30px; padding-right:26px}

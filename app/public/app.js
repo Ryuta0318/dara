@@ -626,13 +626,20 @@ function notifSheet(after){
             h('button', {type:'button', class:'b3 sm soft', text:'あとで', onclick:function(){ try{ localStorage.setItem('dara.pushnudge', '1'); }catch(e){} draw(); }}))));
       }
       if(!r.items.length){ box.appendChild(h('div', {class:'empty'}, orb(72, 1, {bob:true}), h('p', {text:'通知はまだありません'}))); return; }
-      if(r.unread) box.appendChild(h('button', {type:'button', class:'b3 soft sm', text:'すべて既読にする', onclick:function(){ api('/api/notifs/read', {body:{}}).then(draw); }}));
-      r.items.forEach(function(n){
-        var who = n.actor ? user(n.actor).name : '';
-        box.appendChild(h('button', {type:'button', class:'nrow' + (n.rd ? '' : ' new'), onclick:function(){ go(n); }},
-          n.actor ? avatar(n.actor, 40) : orb(40, 5, {face:false}),
-          h('div', {class:'nm'}, h('b', {text:who}), (n.kind === 'report' ? '' : '') + NKIND[n.kind], h('small', {text:n.text || ''})),
-          h('span', {class:'ago', text:ago(n.ts)})));
+      if(r.unread) box.appendChild(h('div', {class:'readall'}, h('button', {type:'button', class:'pillbtn', text:'すべて既読', onclick:function(){ api('/api/notifs/read', {body:{}}).then(draw); }})));
+      var t0 = new Date(); t0.setHours(0, 0, 0, 0);
+      var NI = {comment:'💬', reply:'💬', mention:'＠', react:'♥', friend_req:'👤', friend_ok:'👤', report:'⚑'};
+      var groupsN = [['今日', r.items.filter(function(n){ return n.ts >= t0.getTime(); })], ['以前', r.items.filter(function(n){ return n.ts < t0.getTime(); })]];
+      groupsN.forEach(function(gr){
+        if(!gr[1].length) return;
+        box.appendChild(h('h2', {class:'sec', text:gr[0]}));
+        gr[1].forEach(function(n){
+          var who = n.actor ? user(n.actor).name : '';
+          box.appendChild(h('button', {type:'button', class:'nrow' + (n.rd ? '' : ' new'), onclick:function(){ go(n); }},
+            n.actor ? avatar(n.actor, 44) : orb(44, 5, {face:false}),
+            h('div', {class:'nm'}, h('b', {text:who + ' さん'}), NKIND[n.kind].replace(/^(が|から|と)/, function(m){ return m === 'が' ? 'が' : m; }), h('small', {text:(n.text ? n.text + ' · ' : '') + ago(n.ts)})),
+            h('span', {class:'nic2', text:NI[n.kind] || '•'}), n.rd ? null : h('i', {class:'ndot'})));
+        });
       });
     }).catch(function(){ box.innerHTML = ''; box.appendChild(h('div', {class:'hint', text:'読み込めませんでした'})); });
   }
@@ -941,7 +948,7 @@ function homeView(tab){
   }
   function buildFriends(){
     var found = [], lastQ = null, timer;
-    var input = h('input', {type:'search', class:'field', placeholder:'IDか名前で探す', 'aria-label':'友達を探す', autocomplete:'off', autocapitalize:'none'});
+    var input = h('input', {type:'search', class:'sfield', placeholder:'IDか名前で探す', 'aria-label':'友達を探す', autocomplete:'off', autocapitalize:'none'});
     var results = h('div'), lists = h('div');
     function reload(){ load(true); }
     function act(fn){ return async function(){ try{ await fn(); reload(); }catch(e){ toast(errMsg(e)); } }; }
@@ -985,12 +992,12 @@ function homeView(tab){
             h('button', {type:'button', class:'b3 sm soft', text:'削除', onclick:act(function(){ return api('/api/friends/remove', {body:{id:p.id}}); })})));
         });
       }
-      lists.appendChild(h('h2', {class:'sec', text:'友達'}));
+      lists.appendChild(h('h2', {class:'sec', text:'友達 ' + fr.friends.length}));
       if(!fr.friends.length) lists.appendChild(h('div', {class:'hint', text:'まだ友達がいません QR・リンク・IDで申請しましょう'}));
       fr.friends.forEach(function(p){
         lists.appendChild(h('div', {class:'row'}, avatar(p.id, 44), h('div', {class:'nm'}, p.name, h('small', {text:'@' + p.handle})),
-          h('button', {type:'button', class:'b3 sm', text:'メッセージ', onclick:function(){ location.hash = '#/dm/' + p.id; }}),
-          h('button', {type:'button', class:'b3 sm soft', text:'解除', onclick:async function(){
+          h('button', {type:'button', class:'b3 sm pillbtn', text:'メッセージ', onclick:function(){ location.hash = '#/dm/' + p.id; }}),
+          h('button', {type:'button', class:'kebab', 'aria-label':'友達を解除', text:'⋮', onclick:async function(){
             var ok = await askConfirm(p.name + ' さんを友達から外しますか', '解除する');
             if(ok) act(function(){ return api('/api/friends/remove', {body:{id:p.id}}); })();
           }})));
@@ -1004,30 +1011,50 @@ function homeView(tab){
       }
     }
     var link = friendLink(st.me.handle);
-    function menuRow(ic, t, sub, fn){
-      return h('button', {type:'button', class:'mrow', onclick:fn}, h('span', {class:'mic', text:ic}), h('span', {class:'mt'}, t, sub ? h('small', {text:sub}) : null));
+    function puffy(cls, ic, t, fn){
+      return h('button', {type:'button', class:'puffy ' + cls, onclick:fn}, h('span', {class:'pi', text:ic}), h('span', {text:t}));
     }
     function addMenu(){
       var sh;
       function go(fn){ return function(){ if(sh) sh(); setTimeout(fn, 160); }; }
-      var c = h('div', null,
+      function row(ic, t, sub, fn){ return h('button', {type:'button', class:'mrow', onclick:go(fn)}, h('span', {class:'mic', text:ic}), h('span', {class:'mt'}, t, sub ? h('small', {text:sub}) : null)); }
+      sh = openSheet('友達を追加', h('div', null,
         h('div', {class:'myidrow'}, h('small', {text:'あなたのID'}), h('b', {text:'@' + st.me.handle})),
-        menuRow('🔍', 'IDで探す', '名前やIDで検索', go(function(){ input.focus(); })),
-        menuRow('▦', 'マイQRコード', '相手に読み取ってもらう', go(function(){ qrSheet('友達追加のQR', link, '@' + st.me.handle); })),
-        menuRow('📷', 'QRコードを読み取る', null, go(scanSheet)),
-        menuRow('🔗', 'リンクを共有', null, go(function(){ shareLink('DARA', 'DARAで友達になろう', link); })));
-      sh = openSheet('友達を追加', c);
+        row('▦', 'マイQRコード', '相手に読み取ってもらう', function(){ qrSheet('友達追加のQR', link, '@' + st.me.handle); }),
+        row('📷', 'QRコードを読み取る', null, scanSheet),
+        row('🔗', 'リンクを共有', null, function(){ shareLink('DARA', 'DARAで友達になろう', link); }),
+        row('🔍', 'IDで探す', '名前やIDで検索', function(){ input.focus(); })));
     }
-    var head = h('div', {class:'sechead'}, h('h2', {class:'sec', text:'友達'}),
-      h('button', {type:'button', class:'addbtn', 'aria-label':'友達を追加', onclick:addMenu}, '＋'));
-    return {el:h('div', null, head, input, results, lists), update:function(){ drawRes(); drawLists(); }};
+    var head = h('div', {class:'sechead'}, h('h2', {class:'sec big', text:'友達'}),
+      h('button', {type:'button', class:'roundplus', 'aria-label':'友達を追加', onclick:addMenu}, '+'));
+    var sbox = h('label', {class:'sbox'}, svgSearch(), input);
+    var addCard = h('div', {class:'panel'}, h('div', {class:'ptitle', text:'友達を追加'}),
+      h('div', {class:'puffies'},
+        puffy('lav', '▦', 'QRで追加', function(){ qrSheet('友達追加のQR', link, '@' + st.me.handle); }),
+        puffy('pink', '🔗', 'リンクで追加', function(){ shareLink('DARA', 'DARAで友達になろう', link); }),
+        puffy('sky', 'ID', 'IDで追加', function(){ input.focus(); }))
+      );
+    return {el:h('div', null, head, sbox, addCard, results, lists), update:function(){ drawRes(); drawLists(); }};
+  }
+  function pickPeer(){
+    var list = (fr ? fr.friends : []);
+    var close, box = h('div');
+    if(!list.length) box.appendChild(h('div', {class:'hint', text:'まだ友達がいません 「友達」タブから追加しましょう'}));
+    list.forEach(function(p){
+      box.appendChild(h('button', {type:'button', class:'row dmrow', onclick:function(){ close(); location.hash = '#/dm/' + p.id; }},
+        avatar(p.id, 44), h('div', {class:'nm'}, p.name, h('small', {text:'@' + p.handle})), h('span', {class:'hint', text:'メッセージ'})));
+    });
+    close = openSheet('メッセージを送る相手', box);
   }
   function buildDm(){
     var wrap = h('div');
     function draw(){
       wrap.innerHTML = '';
-      wrap.appendChild(h('h2', {class:'sec', text:'メッセージ'}));
+      wrap.appendChild(h('div', {class:'sechead'}, h('h2', {class:'sec big', text:'メッセージ'}),
+        h('button', {type:'button', class:'roundplus', 'aria-label':'新しいメッセージ', onclick:pickPeer}, '+')));
       if(!dms){ wrap.appendChild(h('div', {class:'hint', text:'読み込み中'})); return; }
+      wrap.appendChild(h('button', {type:'button', class:'dmhero', onclick:pickPeer}, h('span', {class:'dmh-ic', text:'✉'}),
+        h('span', {class:'dmh-t'}, h('b', {text:'新しいメッセージを始めよう'}), h('small', {text:'友達を選んでメッセージを送ろう'})), h('span', {class:'chev', text:'›'})));
       var have = {};
       if(!dms.convs.length) wrap.appendChild(h('div', {class:'empty'}, orb(72, 2, {bob:true}), h('p', {text:'友達と1対1でメッセージできます 下の友達から、はじめてみましょう'})));
       dms.convs.forEach(function(c){
@@ -1037,14 +1064,6 @@ function homeView(tab){
           avatar(c.peer, 48), h('div', {class:'nm'}, user(c.peer).name, h('small', {text:(c.last.mine ? 'あなた: ' : '') + prev})),
           c.unread ? h('span', {class:'dot2', text:c.unread}) : h('span', {class:'ago', text:ago(c.last.ts)})));
       });
-      var rest = (fr ? fr.friends : []).filter(function(p){ return !have[p.id]; });
-      if(rest.length){
-        wrap.appendChild(h('h2', {class:'sec', text:'友達とはじめる'}));
-        rest.forEach(function(p){
-          wrap.appendChild(h('button', {type:'button', class:'row dmrow', onclick:function(){ location.hash = '#/dm/' + p.id; }},
-            avatar(p.id, 44), h('div', {class:'nm'}, p.name, h('small', {text:'@' + p.handle})), h('span', {class:'hint', text:'メッセージ'})));
-        });
-      }
       if(fr && !fr.friends.length) wrap.appendChild(h('div', {class:'hint', text:'まだ友達がいません 「友達」タブから追加しましょう'}));
     }
     return {el:wrap, update:draw};
@@ -1157,43 +1176,60 @@ function groupInfoSheet(gid, info){
     var G = g.group, isOwner = G.owner === st.me.id, canStyle = !G.locked || isOwner;
     box.innerHTML = '';
     var code = G.code, gname = G.name;
-    box.appendChild(roomCardEl(G, {big:true, no:Math.max(1, (st.groupOrder || []).indexOf(G.id) + 1)}));
-    box.appendChild(h('button', {type:'button', class:'b3 soft block', style:'margin-top:12px', disabled:!canStyle,
-      text:canStyle ? '部屋の見た目を変える（名前・色・キャラ）' : '見た目はオーナーだけが変えられます', onclick:function(){
-      close(); window.DARAStampUI.openRoomStyle(G, function(){ if(info) info(); });
-    }}));
-    box.appendChild(h('div', {class:'lbl', text:'招待コード'}));
-    box.appendChild(h('div', {class:'code', text:fmtCode(code)}));
-    box.appendChild(h('div', {class:'hint', text:'このコードを知っている人は、友達でなくても入れます'}));
-    box.appendChild(h('div', {class:'btnrow'},
-      h('button', {type:'button', class:'b3 sm', text:'コードをコピー', onclick:function(){ copyText(fmtCode(code)); }}),
-      h('button', {type:'button', class:'b3 sm soft', text:'リンクを共有', onclick:function(){ shareLink('DARA', '「' + gname + '」に招待されました', roomLink(code)); }}),
-      h('button', {type:'button', class:'b3 sm soft', text:'QR', onclick:function(){ qrSheet('部屋のQR', roomLink(code), gname + '  ' + fmtCode(code)); }})));
-    if(canStyle) box.appendChild(h('button', {type:'button', class:'ghost', text:'コードを作り直す', onclick:async function(){
-      var ok = await askConfirm('新しいコードを作ります 古いコードでは入れなくなります', '作り直す');
-      if(!ok) return;
-      try{ await api('/api/groups/' + gid + '/code', {body:{}}); await draw(); toast('新しいコードにしました'); }catch(e){ toast(errMsg(e)); }
-    }}));
-    box.appendChild(h('div', {class:'lbl', text:'メンバー ' + G.members.length + '人'}));
-    G.members.forEach(function(id){
-      var row = h('div', {class:'row'}, avatar(id, 44),
-        h('div', {class:'nm'}, user(id).name + (id === st.me.id ? '（あなた）' : ''), id === G.owner ? h('small', {text:'オーナー'}) : null));
-      if(isOwner && id !== st.me.id){
-        row.appendChild(h('button', {type:'button', class:'b3 sm soft', text:'ゆずる', onclick:async function(){
-          var ok = await askConfirm(user(id).name + ' さんに、オーナーをゆずりますか あなたはオーナーではなくなります', 'ゆずる');
-          if(!ok) return;
-          try{ await api('/api/groups/' + gid + '/owner', {body:{uid:id}}); toast('オーナーをゆずりました'); await draw(); if(info) info(); }catch(e){ toast(errMsg(e)); }
-        }}));
-        row.appendChild(h('button', {type:'button', class:'b3 sm soft', text:'外す', onclick:async function(){
-          var ok = await askConfirm(user(id).name + ' さんを、この部屋から外しますか', '外す');
-          if(!ok) return;
-          try{ await api('/api/groups/' + gid + '/kick', {body:{uid:id}}); toast('外しました'); await draw(); if(info) info(); }catch(e){ toast(errMsg(e)); }
-        }}));
+    var card = roomCardEl(G, {big:true, no:Math.max(1, (st.groupOrder || []).indexOf(G.id) + 1)});
+    if(canStyle){ card.style.cursor = 'pointer'; card.appendChild(h('span', {class:'wchev', text:'›'})); card.addEventListener('click', function(){ close(); window.DARAStampUI.openRoomStyle(G, function(){ if(info) info(); }); }); }
+    box.appendChild(card);
+    // メンバー
+    var showAll = false;
+    var mem = h('div', {class:'panel'});
+    function drawMem(){
+      mem.innerHTML = '';
+      mem.appendChild(h('div', {class:'prow'}, h('div', {class:'ptitle', text:'メンバー ' + G.members.length + '人'}),
+        G.members.length > 6 || isOwner ? h('button', {type:'button', class:'plink', text:showAll ? 'とじる' : 'すべて見る', onclick:function(){ showAll = !showAll; drawMem(); }}) : null));
+      if(!showAll){
+        var strip = h('div', {class:'mstrip'});
+        G.members.slice(0, 6).forEach(function(id){ strip.appendChild(h('div', {class:'mcell'}, avatar(id, 50), h('small', {text:user(id).name}))); });
+        if(G.members.length > 6) strip.appendChild(h('div', {class:'mcell'}, h('span', {class:'mmore', text:'+' + (G.members.length - 6)})));
+        mem.appendChild(strip);
+        return;
       }
-      box.appendChild(row);
-    });
+      G.members.forEach(function(id){
+        var row = h('div', {class:'row'}, avatar(id, 44),
+          h('div', {class:'nm'}, user(id).name + (id === st.me.id ? '（あなた）' : ''), id === G.owner ? h('small', {text:'オーナー'}) : null));
+        if(isOwner && id !== st.me.id){
+          row.appendChild(h('button', {type:'button', class:'b3 sm soft', text:'ゆずる', onclick:async function(){
+            var ok = await askConfirm(user(id).name + ' さんに、オーナーをゆずりますか あなたはオーナーではなくなります', 'ゆずる');
+            if(!ok) return;
+            try{ await api('/api/groups/' + gid + '/owner', {body:{uid:id}}); toast('オーナーをゆずりました'); await draw(); if(info) info(); }catch(e){ toast(errMsg(e)); }
+          }}));
+          row.appendChild(h('button', {type:'button', class:'b3 sm soft', text:'外す', onclick:async function(){
+            var ok = await askConfirm(user(id).name + ' さんを、この部屋から外しますか', '外す');
+            if(!ok) return;
+            try{ await api('/api/groups/' + gid + '/kick', {body:{uid:id}}); toast('外しました'); await draw(); if(info) info(); }catch(e){ toast(errMsg(e)); }
+          }}));
+        }
+        mem.appendChild(row);
+      });
+    }
+    drawMem(); box.appendChild(mem);
+    // 招待
+    box.appendChild(h('div', {class:'panel'}, h('div', {class:'ptitle', text:'招待コード'}),
+      h('div', {class:'codepill', text:'DARA-' + fmtCode(code)}),
+      h('div', {class:'puffies'},
+        h('button', {type:'button', class:'puffy pink wide', onclick:function(){ shareLink('DARA', '「' + gname + '」に招待されました', roomLink(code)); }}, h('span', {class:'pi', text:'↗'}), h('span', {text:'リンクを共有'})),
+        h('button', {type:'button', class:'puffy lav', onclick:function(){ qrSheet('部屋のQR', roomLink(code), gname + '  ' + fmtCode(code)); }}, h('span', {class:'pi', text:'▦'}), h('span', {text:'QR'})),
+        h('button', {type:'button', class:'puffy sky', onclick:function(){ copyText(fmtCode(code)); }}, h('span', {class:'pi', text:'❐'}), h('span', {text:'コードをコピー'})))
+      ,
+      h('div', {class:'hint', text:'このコードを知っている人は、友達でなくても入れます'}),
+      canStyle ? h('button', {type:'button', class:'ghost', text:'コードを作り直す', onclick:async function(){
+        var ok = await askConfirm('新しいコードを作ります 古いコードでは入れなくなります', '作り直す');
+        if(!ok) return;
+        try{ await api('/api/groups/' + gid + '/code', {body:{}}); await draw(); toast('新しいコードにしました'); }catch(e){ toast(errMsg(e)); }
+      }}) : null));
+    box.appendChild(h('button', {type:'button', class:'menurow', disabled:!canStyle, onclick:function(){ close(); window.DARAStampUI.openRoomStyle(G, function(){ if(info) info(); }); }},
+      h('span', {class:'mi', text:'🎨'}), h('span', {class:'mtt', text:canStyle ? '部屋の見た目をカスタマイズ' : '見た目はオーナーだけが変えられます'}), h('span', {class:'chev', text:'›'})));
     var addable = fr.friends.filter(function(p){ return G.members.indexOf(p.id) < 0; });
-    box.appendChild(h('div', {class:'lbl', text:'友達を追加'}));
+    box.appendChild(h('div', {class:'lbl', text:'友達を部屋に追加'}));
     if(!addable.length) box.appendChild(h('div', {class:'hint', text:'追加できる友達はいません'}));
     addable.forEach(function(p){
       cacheUsers({[p.id]:p});

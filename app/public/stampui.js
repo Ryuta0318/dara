@@ -298,10 +298,22 @@ function openRoomStyle(group, onSaved){
     }catch(e){ A.toast(A.errMsg(e)); save.disabled = false; }
   });
   var pvTop = h('div', {class:'pvtop'}, pvModes, pvStage);
-  var root = h('div', {class:'sted'}, sec('なまえ'), nameIn, sec('ひとこと'), descIn, sec('へやのいろ'), colorBox,
-    sec('キャラクター'), animalBox, sec('キャラクターのいろ'), acolBox, sec('タイトルの書体'), fontBox, save);
+  var tab = 'chara';
+  var tabsEl = h('div', {class:'segtabs'}), pane = h('div');
+  function drawTabs(){
+    tabsEl.innerHTML = '';
+    [['chara', 'キャラ'], ['color', '色'], ['text', '文字']].forEach(function(t){
+      tabsEl.appendChild(h('button', {type:'button', class:'seg' + (tab === t[0] ? ' on' : ''), text:t[1], onclick:function(){ tab = t[0]; drawTabs(); }}));
+    });
+    pane.innerHTML = '';
+    if(tab === 'chara'){ pane.appendChild(sec('キャラクターをえらぶ')); pane.appendChild(animalBox); pane.appendChild(sec('キャラクターのいろ')); pane.appendChild(acolBox); }
+    else if(tab === 'color'){ pane.appendChild(sec('部屋の色をえらぶ')); pane.appendChild(colorBox); }
+    else{ pane.appendChild(sec('なまえ')); pane.appendChild(nameIn); pane.appendChild(sec('ひとこと')); pane.appendChild(descIn); pane.appendChild(sec('タイトルの書体')); pane.appendChild(fontBox); }
+  }
+  var root = h('div', {class:'sted'},
+    tabsEl, pane, save);
   close = A.openSheet('部屋をカスタマイズ', root, null, {top:pvTop});
-  draw();
+  draw(); drawTabs();
 }
 
 window.DARAStampUI = {openEditor:openEditor, openPicker:openPicker, openRoomStyle:openRoomStyle};
