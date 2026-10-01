@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DARA キャラ切り抜き</title>
+<style>
+body{margin:0;padding:24px;font:15px/1.6 system-ui,sans-serif;background:#111;color:#eee}
+h1{font-size:20px;margin:0 0 6px}p{color:#aaa;margin:4px 0 14px}
+#drop{border:2px dashed #666;border-radius:16px;padding:28px;text-align:center;cursor:pointer}
+#drop.on{border-color:#9db8ff;background:#1b2030}
+.row{display:flex;gap:16px;align-items:center;margin:14px 0;flex-wrap:wrap}
+.card{background:#1c1c22;border-radius:16px;padding:12px;display:inline-block;margin:8px 8px 0 0;vertical-align:top}
+.card canvas{width:220px;height:220px;object-fit:contain;border-radius:12px;background:
+ conic-gradient(#ffa6cc 25%,#9db8ff 0 50%,#ffa6cc 0 75%,#9db8ff 0) 0 0/24px 24px}
+.card input[type=text]{width:130px;background:#000;color:#fff;border:1px solid #444;border-radius:8px;padding:6px}
+button{background:#fff;color:#111;border:0;border-radius:999px;padding:8px 16px;font-weight:700;cursor:pointer}
+label{color:#bbb}
+</style></head><body>
+<h1>キャラの切り抜き（黒背景 → 透明）</h1>
+<p>ChatGPT で作った「黒い背景のキャラ画像」をここに入れると、背景だけ透明にして、WebP で保存できます。ファイル名は <b>gorilla / bear / rabbit / cat / fox / penguin</b> のどれかにして、<code>app/public/animals/</code> に入れてください。</p>
+<div id="drop">ここに画像をドラッグ、またはクリックして選ぶ（複数OK）<input id="file" type="file" accept="image/*" multiple hidden></div>
+<div class="row">
+  <label>背景のきりぬき強さ <input id="th" type="range" min="10" max="120" value="46"> <span id="thv">46</span></label>
+  <label>大きさ(px) <input id="sz" type="number" value="720" min="256" max="1600" style="width:80px"></label>
+</div>
+<div id="out"></div>
+<script>
+var files = [];
+var drop = document.getElementById('drop'), fileIn = document.getElementById('file'), out = document.getElementById('out');
+var th = document.getElementById('th'), thv = document.getElementById('thv'), sz = document.getElementById('sz');
+drop.onclick = function(){ fileIn.click(); };
+fileIn.onchange = function(){ add(fileIn.files); };
+['dragover','dragenter'].forEach(function(e){ drop.addEventListener(e, function(ev){ ev.preventDefault(); drop.classList.add('on'); }); });
+['dragleave','drop'].forEach(function(e){ drop.addEventListener(e, function(ev){ ev.preventDefault(); drop.classList.remove('on'); }); });
+drop.addEventListener('drop', function(ev){ add(ev.dataTransfer.files); });
+th.oninput = sz.onchange = function(){ thv.textContent = th.value; redraw(); };
+function add(list){ Array.prototype.forEach.call(list, function(f){
+  var img = new Image(); img.onload = function(){ files.push({name:f.name.replace(/\.[^.]+$/, ''), img:img}); redraw(); }; img.src = URL.createObjectURL(f); }); }
+
+/* 縁につながっている「黒っぽい部分」だけを背景として消す（目の黒など、キャラの内側は残る） */
+function cut(img, T, size){
+  var w = img.naturalWidth, h = img.naturalHeight;
+  var c = document.createElement('canvas'); c.width = w; c.height = h;
+  var x = c.getContext('2d', {willReadFrequently:true}); x.drawImage(img, 0, 0);
+  var d = x.getImageData(0, 0, w, h), p = d.data, n = w * h;
+  var bg = new Uint8Array(n), stack = [];
+  function dark(i){ var o = i * 4; return Math.max(p[o], p[o + 1], p[o + 2]) < T; }
+  for(var i = 0; i < w; i++){ stack.push(i, (h - 1) * w + i); }
+  for(var j = 0; j < h; j++){ stack.push(j * w, j * w + w - 1); }
+  while(stack.length){
+    var k = stack.pop(); if(bg[k] || !dark(k)) continue; bg[k] = 1;
+    var xx = k % w;
+    if(xx > 0) stack.push(k - 1); if(xx < w - 1) stack.push(k + 1);
+    if(k >= w) stack.push(k - w); if(k < n - w) stack.push(k + w);
+  }
+  // 背景に接する縁は、明るさに応じてやわらかく透明にする
+  var minX = w, minY = h, maxX = 0, maxY = 0;
+  for(var y = 0; y < h; y++) for(var xq = 0; xq < w; xq++){
+    var q = y * w + xq, o = q * 4, a = 255;
+    if(bg[q]) a = 0;
+    else {
+      var near = (xq > 0 && bg[q - 1]) || (xq < w - 1 && bg[q + 1]) || (y > 0 && bg[q - w]) || (y < h - 1 && bg[q + w]);
+      if(near){ var m = Math.max(p[o], p[o + 1], p[o + 2]); a = Math.max(0, Math.min(255, (m - T * .5) / (T * 1.2) * 255)); }
+    }
+    p[o + 3] = a;
+    if(a > 8){ if(xq < minX) minX = xq; if(xq > maxX) maxX = xq; if(y < minY) minY = y; if(y > maxY) maxY = y; }
+  }
+  x.putImageData(d, 0, 0);
+  if(maxX <= minX) return c;
+  var pad = Math.round(Math.max(maxX - minX, maxY - minY) * .03);
+  minX = Math.max(0, minX - pad); minY = Math.max(0, minY - pad); maxX = Math.min(w - 1, maxX + pad); maxY = Math.min(h - 1, maxY + pad);
+  var cw = maxX - minX + 1, ch = maxY - minY + 1, s = Math.min(1, size / Math.max(cw, ch));
+  var r = document.createElement('canvas'); r.width = Math.round(cw * s); r.height = Math.round(ch * s);
+  var rx = r.getContext('2d'); rx.imageSmoothingQuality = 'high'; rx.drawImage(c, minX, minY, cw, ch, 0, 0, r.width, r.height);
+  return r;
+}
+function redraw(){
+  out.innerHTML = '';
+  files.forEach(function(f, idx){
+    var c = cut(f.img, +th.value, +sz.value), card = document.createElement('div'); card.className = 'card';
+    var nm = document.createElement('input'); nm.type = 'text'; nm.value = f.name; nm.oninput = function(){ f.name = nm.value; };
+    var b = document.createElement('button'); b.textContent = '保存 (.webp)';
+    b.onclick = function(){ c.toBlob(function(bl){ var a = document.createElement('a'); a.href = URL.createObjectURL(bl); a.download = (f.name || 'animal') + '.webp'; a.click(); }, 'image/webp', .92); };
+    var rm = document.createElement('button'); rm.textContent = '×'; rm.style.marginLeft = '6px'; rm.onclick = function(){ files.splice(idx, 1); redraw(); };
+    card.appendChild(c); card.appendChild(document.createElement('br')); card.appendChild(nm); card.appendChild(b); card.appendChild(rm);
+    c.dataset.name = f.name; out.appendChild(card);
+  });
+}
+window.__cut = cut;
+</script></body></html>

@@ -130,6 +130,7 @@ export class Hub extends DurableObject {
       "ALTER TABLE groups ADD COLUMN tfont INTEGER DEFAULT 0",
       "ALTER TABLE groups ADD COLUMN locked INTEGER DEFAULT 0",
       "ALTER TABLE groups ADD COLUMN animal INTEGER",
+      "ALTER TABLE groups ADD COLUMN last_uid TEXT",
       "ALTER TABLE groups ADD COLUMN acolor TEXT",
       "ALTER TABLE threads ADD COLUMN edited INTEGER",
       "ALTER TABLE comments ADD COLUMN edited INTEGER",
@@ -573,8 +574,8 @@ export class Hub extends DurableObject {
       let ids = [];
       const groups = gs.map((g) => {
         const mem = this.q("SELECT uid FROM gm WHERE gid=? ORDER BY ts", g.id).map((r) => r.uid);
-        ids = ids.concat(mem.slice(0, 8));
-        return { id: g.id, name: g.name, color: g.color, ...this.groupStyle(g), last: g.last, lastText: g.last_text, members: mem };
+        ids = ids.concat(mem.slice(0, 8), g.last_uid ? [g.last_uid] : []);
+        return { id: g.id, name: g.name, color: g.color, ...this.groupStyle(g), last: g.last, lastText: g.last_text, lastUid: g.last_uid || null, members: mem };
       });
       return json({ groups, users: this.users(ids), stamps: this.decoStamps(gs) });
     }
@@ -638,7 +639,7 @@ export class Hub extends DurableObject {
       if (b.ccolor !== undefined) put("ccolor", b.ccolor === null ? null : HEX.test(String(b.ccolor)) ? String(b.ccolor).toLowerCase() : null);
       if (b.face !== undefined) put("face", cInt(b.face, 0, 11, 0));
       if (b.shape !== undefined) put("shape", cInt(b.shape, 0, 7, 0));
-      if (b.animal !== undefined) put("animal", b.animal === null ? null : cInt(b.animal, 0, 7, 0));
+      if (b.animal !== undefined) put("animal", b.animal === null ? null : cInt(b.animal, 0, 15, 0));
       if (b.acolor !== undefined) put("acolor", b.acolor === null ? null : HEX.test(String(b.acolor)) ? String(b.acolor).toLowerCase() : null);
       if (b.pattern !== undefined) put("pattern", cInt(b.pattern, 0, 4, 0));
       if (b.tfont !== undefined) put("tfont", cInt(b.tfont, 0, 9, 0));
@@ -718,7 +719,7 @@ export class Hub extends DurableObject {
         const id = rid(10);
         const now = Date.now();
         this.run("INSERT INTO threads(id,gid,author,body,imgs,ts,last,ccount,poll) VALUES(?,?,?,?,?,?,?,0,?)", id, g.id, me.id, text, JSON.stringify(imgs), now, now, poll);
-        this.run("UPDATE groups SET last=?, last_text=? WHERE id=?", now, (text || (poll ? "アンケート" : "写真")).slice(0, 60), g.id);
+        this.run("UPDATE groups SET last=?, last_text=?, last_uid=? WHERE id=?", now, (text || (poll ? "アンケート" : "写真")).slice(0, 60), me.id, g.id);
         for (const uid of this.mentioned(text, { gid: g.id })) this.notify(uid, "mention", me.id, { gid: g.id, tid: id, text: snip(text) });
         return json({ id });
       }
@@ -795,7 +796,7 @@ export class Hub extends DurableObject {
       tell(parentAuthor, "reply");
       tell(t.author, "comment");
       this.run("UPDATE threads SET ccount=ccount+1, last=? WHERE id=?", now, t.id);
-      this.run("UPDATE groups SET last=?, last_text=? WHERE id=?", now, (text || (stamp && !imgs.length ? "スタンプ" : "写真")).slice(0, 60), t.gid);
+      this.run("UPDATE groups SET last=?, last_text=?, last_uid=? WHERE id=?", now, (text || (stamp && !imgs.length ? "スタンプ" : "写真")).slice(0, 60), me.id, t.gid);
       return json({ id });
     }
     if ((m = path.match(/^\/api\/comments\/([a-f0-9]{20})$/)) && (M === "DELETE" || M === "PATCH")) {

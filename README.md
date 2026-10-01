@@ -119,3 +119,9 @@ node tools/capture-assets.mjs       # public/assets/logo.png を書き出す
 2. `npx wrangler deploy` で公開すると、`wrangler.jsonc` の `routes` により `dara-app.com` と `www.dara-app.com` に紐づく
 
 `index.html` の canonical / OG の URL も `https://dara-app.com/` にしてあります。
+
+## キャラクター画像の入れ方
+
+部屋のキャラは `app/public/animals/<名前>.webp`（`gorilla` `bear` `rabbit` `cat` `fox` `penguin`）があればその画像を使い、無ければ内蔵の SVG で代用します。
+ChatGPT などで「真っ黒な背景・真珠のような白い立体キャラ」を作り、`tools/cutout.html` をブラウザで開いて入れると、背景が透明な WebP になります。
+色の変更は、画像の上に色を重ねて表現します（白いキャラほど綺麗に色が変わります）。

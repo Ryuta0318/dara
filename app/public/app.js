@@ -833,43 +833,64 @@ function settingsSheet(){
 function svgGear(){
   return svgIcon('<circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>', '22');
 }
+// 部屋の中の上のバー：どうぶつのアイコン + 名前 + ひとこと
 function fillBanner(banner, group, o){
   o = o || {};
-  banner.className = 'banner' + (S.roomDark(group) ? ' dk' : '') + (o.preview ? ' preview' : '');
+  banner.className = 'rhead' + (o.preview ? ' preview' : '');
   banner.style.cssText = S.roomVars(group);
   banner.innerHTML = '';
-  var stack = h('div', {class:'stack'});
-  (group.members || []).slice(0, 5).forEach(function(id){ stack.appendChild(avatar(id, 34)); });
-  banner.appendChild(o.preview ? h('span', {class:'back', text:'‹ 戻る'}) : h('button', {type:'button', class:'back', text:'‹ 戻る', onclick:o.onBack}));
-  banner.appendChild(o.preview ? h('span', {class:'gear', 'aria-hidden':'true'}, svgGear())
-    : h('button', {type:'button', class:'gear', 'aria-label':'部屋の設定', onclick:o.onSettings}, svgGear()));
-  banner.appendChild(h('div', {class:'banimal'}, window.DARAAnimal.forRoom(group, 112, true)));
-  banner.appendChild(h('h1', {text:group.name, style:S.fontStyle(group.tfont)}));
-  if(group.desc) banner.appendChild(h('div', {class:'bdesc', text:group.desc}));
+  banner.appendChild(o.preview ? h('span', {class:'hbtn', text:'‹'}) : h('button', {type:'button', class:'hbtn', 'aria-label':'戻る', text:'‹', onclick:o.onBack}));
   var n = (group.members || []).length;
-  banner.appendChild(h('div', {class:'bfoot'}, stack, o.preview
-    ? h('div', {class:'pills'}, h('span', {class:'pill', text:'探す'}), h('span', {class:'pill', text:'メンバー ' + n + '人'}))
-    : h('div', {class:'pills'}, h('button', {type:'button', class:'pill', text:'探す', onclick:o.onSearch}), h('button', {type:'button', class:'pill', text:'メンバー ' + n + '人', onclick:o.onSettings}))));
+  banner.appendChild(h('div', {class:'hmid'},
+    h('div', {class:'hico'}, window.DARAAnimal.forRoom(group, 54, false)),
+    h('div', {class:'htxt'}, h('div', {class:'hname', text:group.name, style:S.fontStyle(group.tfont)}), h('div', {class:'hsub', text:group.desc || 'メンバー ' + n + '人'}))));
+  var bar = h('div', {class:'hbar'});
+  if(o.preview){ bar.appendChild(h('span', {class:'hbtn', text:'⌕'})); bar.appendChild(h('span', {class:'hbtn', 'aria-hidden':'true'}, svgGear())); }
+  else{
+    bar.appendChild(h('button', {type:'button', class:'hbtn', 'aria-label':'探す', onclick:o.onSearch}, svgSearch()));
+    bar.appendChild(h('button', {type:'button', class:'hbtn gear', 'aria-label':'部屋の設定', onclick:o.onSettings}, svgGear()));
+  }
+  banner.appendChild(bar);
   return banner;
 }
-// ホームで横にめくる、部屋のカード
+// 部屋のカード（ホームの一覧・設定の上）。ぷっくりした色のかたまりに、どうぶつ
 function roomCardEl(g, o){
   o = o || {};
-  var mem = g.members || [], stack = h('div', {class:'rstack'});
-  mem.slice(0, 5).forEach(function(id){ stack.appendChild(avatar(id, 40)); });
-  if(mem.length > 5) stack.appendChild(h('span', {class:'more', text:'+' + (mem.length - 5)}));
-  var go = o.preview ? h('span', {class:'rgo', text:'部屋に入る'}) : h('span', {class:'rgo', text:'部屋に入る'});
-  var no = o.no || 1;
-  var c = h('div', {class:'rcard' + (S.roomDark(g) ? ' dk' : '') + (o.preview ? ' preview' : ''), style:S.roomVars(g), role:o.preview ? null : 'button', tabindex:o.preview ? '-1' : '0',
-      'aria-label':g.name + ' に入る', onclick:o.onclick || null},
-    h('div', {class:'ranimal'}, window.DARAAnimal.forRoom(g, 150, true)),
-    h('div', {class:'rno', text:'ROOM ' + (no < 10 ? '0' : '') + no}),
-    h('div', {class:'rname', text:g.name, style:S.fontStyle(g.tfont)}),
-    h('div', {class:'rdesc', text:g.desc || (g.lastText ? g.lastText : 'まだ投稿がありません')}),
-    h('div', {class:'rmem'}, h('span', {text:'members'}), h('b', {text:mem.length + '人'})),
-    stack, go);
+  var mem = g.members || [], n = mem.length;
+  var cls = 'wcard' + (S.roomDark(g) ? ' dk' : '') + (o.preview ? ' preview' : '') + (o.big ? ' big' : '');
+  var info = h('div', {class:'winfo'},
+    o.big ? h('div', {class:'rno', text:'ROOM ' + ((o.no || 1) < 10 ? '0' : '') + (o.no || 1)}) : null,
+    h('div', {class:'wname', text:g.name, style:S.fontStyle(g.tfont)}),
+    o.big ? h('div', {class:'wdesc', text:g.desc || ''}) : h('div', {class:'wcount', text:n + '人'}));
+  if(!o.big){
+    var lu = g.lastUid && (st.users[g.lastUid] || null);
+    info.appendChild(h('div', {class:'wlast'},
+      lu ? avatar(g.lastUid, 30) : null,
+      h('div', {class:'wl'}, lu ? h('b', {text:lu.name}) : null, lu && g.last ? h('small', {text:' ' + ago(g.last)}) : null,
+        h('div', {class:'wt', text:g.lastText || 'まだ投稿がありません'}))));
+  }
+  var c = h('div', {class:cls, style:S.roomVars(g), role:o.preview || !o.onclick ? null : 'button', tabindex:o.preview || !o.onclick ? '-1' : '0',
+      'aria-label':o.onclick ? g.name + ' に入る' : null, onclick:o.onclick || null},
+    h('div', {class:'wchar'}, window.DARAAnimal.forRoom(g, o.big ? 150 : 124, true)), info);
+  if(o.big){
+    var stack = h('div', {class:'rstack'});
+    mem.slice(0, 5).forEach(function(id){ stack.appendChild(avatar(id, 30)); });
+    if(n > 5) stack.appendChild(h('span', {class:'more', text:'+' + (n - 5)}));
+    info.appendChild(stack);
+  }
   if(o.onclick && !o.preview) c.addEventListener('keydown', function(e){ if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); o.onclick(); } });
   return c;
+}
+function startSheet(){
+  var close;
+  function big(cls, ic, t, sub, fn){
+    return h('button', {type:'button', class:'bigopt ' + cls, onclick:function(){ close(); setTimeout(fn, 180); }},
+      h('span', {class:'bic', text:ic}), h('span', {class:'bt'}, h('b', {text:t}), h('small', {text:sub})), h('span', {class:'chev', text:'›'}));
+  }
+  var box = h('div', null,
+    big('pink', '＋', '新しい部屋をつくる', '友達を招待して オリジナルの部屋をつくろう', createGroupSheet),
+    big('blue', '👥', '招待コードで入る', '招待された部屋に参加しよう', joinSheet));
+  close = openSheet('部屋をはじめる', box);
 }
 
 /* ---------- home ---------- */
@@ -878,58 +899,45 @@ function homeView(tab){
   var nav = h('nav', {class:'nav', 'aria-label':'メニュー'});
   var bell = null, groups = null, fr = null, dms = null, nf = null, lastSig = '', friendsUI = null, stampsUI = null, dmUI = null, killHero = null;
 
-  var heroBox = tab === 'groups' ? h('div', {class:'hero3d'}) : null;
+  var heroBox = null;
   if(heroBox) killHero = mountHero(heroBox);
   var topR = h('div', {class:'topr'});
   var el = h('div', {class:'page'},
-    h('header', {class:'top'}, heroBox ? h('span') : h('img', {class:'wm', src:'/assets/dara-wordmark.png', alt:'DARA'}), topR),
+    h('header', {class:'top'}, h('img', {class:'wm', src:'/assets/dara-wordmark.png', alt:'DARA'}), topR),
     heroBox, body, nav);
   function drawTop(){
     topR.innerHTML = '';
     var nu = nf ? nf.unread : 0;
     topR.appendChild(h('button', {type:'button', class:'topbtn', 'aria-label':'探す', onclick:function(){ searchSheet(); }}, svgSearch()));
-    topR.appendChild(h('button', {type:'button', 'aria-label':'プロフィール', onclick:profileSheet}, avatar(st.me.id, 38)));
-    var old = bell, nb = h('button', {type:'button', class:'fbell' + (nu ? ' has' : ''), 'aria-label':'通知' + (nu ? ' ' + nu + '件' : ''), onclick:function(){ notifSheet(function(){ load(true); }); }}, svgBell(), nu ? h('span', {class:'dot', text:nu > 99 ? '99+' : nu}) : null);
-    if(old && old.parentNode) old.parentNode.replaceChild(nb, old); else el.appendChild(nb);
-    bell = nb;
+    topR.appendChild(h('button', {type:'button', class:'topbtn' + (nu ? ' has' : ''), 'aria-label':'通知' + (nu ? ' ' + nu + '件' : ''), onclick:function(){ notifSheet(function(){ load(true); }); }}, svgBell(), nu ? h('span', {class:'dot', text:nu > 99 ? '99+' : nu}) : null));
+    topR.appendChild(h('button', {type:'button', 'aria-label':'プロフィール', onclick:profileSheet}, avatar(st.me.id, 40)));
   }
 
   function drawNav(){
     nav.innerHTML = '';
-    var n = fr ? fr.incoming.length : 0;
-    var gb = h('a', {href:'#/', class:'b3 tab' + (tab === 'groups' ? ' ink' : ' soft'), text:'グループ', style:'text-decoration:none'});
-    var fb = h('a', {href:'#/friends', class:'b3 tab' + (tab === 'friends' ? ' ink' : ' soft'), style:'text-decoration:none'}, '友達', n ? h('span', {class:'dot', text:n}) : null);
-    var dn = dms ? dms.unread : 0;
-    var db = h('a', {href:'#/dm', class:'b3 tab' + (tab === 'dm' ? ' ink' : ' soft'), style:'text-decoration:none'}, 'DM', dn ? h('span', {class:'dot', text:dn}) : null);
-    var sb = h('a', {href:'#/stamps', class:'b3 tab' + (tab === 'stamps' ? ' ink' : ' soft'), text:'スタンプ', style:'text-decoration:none'});
-    nav.appendChild(gb); nav.appendChild(fb); nav.appendChild(db); nav.appendChild(sb);
+    var cnt = {friends:fr ? fr.incoming.length : 0, dm:dms ? dms.unread : 0};
+    var IC = {
+      groups:'<path d="M3 11l9-8 9 8"></path><path d="M5 10v10h14V10"></path>',
+      friends:'<circle cx="9" cy="8" r="3.5"></circle><path d="M2.5 20c0-3.6 3-6 6.5-6s6.5 2.4 6.5 6"></path><circle cx="17" cy="9" r="2.6"></circle><path d="M17 14c2.6 0 4.5 1.8 4.5 4.5"></path>',
+      dm:'<path d="M21 12a8 8 0 0 1-11.7 7L4 20l1.2-4.6A8 8 0 1 1 21 12z"></path><circle cx="9" cy="12" r=".6"></circle><circle cx="13" cy="12" r=".6"></circle><circle cx="17" cy="12" r=".6"></circle>',
+      stamps:'<circle cx="12" cy="12" r="9"></circle><path d="M8.5 14c1 1.6 2.2 2.2 3.5 2.2s2.5-.6 3.5-2.2"></path><circle cx="9" cy="10" r=".7"></circle><circle cx="15" cy="10" r=".7"></circle>'};
+    [['groups', '#/', '部屋'], ['friends', '#/friends', '友達'], ['dm', '#/dm', 'DM'], ['stamps', '#/stamps', 'スタンプ']].forEach(function(t){
+      var ic = svgIcon(IC[t[0]], '24');
+      nav.appendChild(h('a', {href:t[1], class:'ntab' + (tab === t[0] ? ' on' : '')}, h('span', {class:'nic'}, ic, cnt[t[0]] ? h('span', {class:'dot', text:cnt[t[0]]}) : null), h('span', {class:'nl', text:t[2]})));
+    });
   }
   function drawGroups(){
     body.innerHTML = '';
-    body.appendChild(h('div', {class:'sechead'}, h('h2', {class:'sec', text:'グループ'}),
-      h('div', {class:'minis'},
-        h('button', {type:'button', class:'mini', onclick:createGroupSheet}, h('b', {text:'＋'}), '部屋をつくる'),
-        h('button', {type:'button', class:'mini soft', onclick:joinSheet}, h('b', {text:'#'}), 'コードで入る'))));
+    body.appendChild(h('div', {class:'sechead'}, h('h2', {class:'sec big', text:'部屋'}),
+      h('button', {type:'button', class:'mini', onclick:startSheet}, h('b', {text:'＋'}), '部屋をはじめる')));
     if(!groups){ body.appendChild(h('div', {class:'hint', text:'読み込み中'})); return; }
     if(!groups.length){
       body.appendChild(h('div', {class:'empty'}, orb(96, 0, {bob:true}),
         h('p', {text:'部屋をつくるか、もらったコードで入りましょう'})));
     }
-    var rail = h('div', {class:'rail'}), dots = h('div', {class:'rdots'});
-    groups.forEach(function(g, i){
-      rail.appendChild(roomCardEl(g, {no:i + 1, onclick:function(){ location.hash = '#/g/' + g.id; }}));
-      dots.appendChild(h('i', {class:i ? '' : 'on'}));
-    });
-    var tick = 0;
-    rail.addEventListener('scroll', function(){
-      cancelAnimationFrame(tick);
-      tick = requestAnimationFrame(function(){
-        var c = rail.firstChild; if(!c) return;
-        var i = Math.round(rail.scrollLeft / (c.offsetWidth + 16));
-        Array.prototype.forEach.call(dots.children, function(d, k){ d.className = k === i ? 'on' : ''; });
-      });
-    });
-    body.appendChild(rail); if(groups.length > 1) body.appendChild(dots);
+    var list = h('div', {class:'glist'});
+    groups.forEach(function(g){ list.appendChild(roomCardEl(g, {onclick:function(){ location.hash = '#/g/' + g.id; }})); });
+    body.appendChild(list);
   }
   function buildFriends(){
     var found = [], lastQ = null, timer;
@@ -1149,7 +1157,8 @@ function groupInfoSheet(gid, info){
     var G = g.group, isOwner = G.owner === st.me.id, canStyle = !G.locked || isOwner;
     box.innerHTML = '';
     var code = G.code, gname = G.name;
-    box.appendChild(h('button', {type:'button', class:'b3 soft block', disabled:!canStyle,
+    box.appendChild(roomCardEl(G, {big:true, no:Math.max(1, (st.groupOrder || []).indexOf(G.id) + 1)}));
+    box.appendChild(h('button', {type:'button', class:'b3 soft block', style:'margin-top:12px', disabled:!canStyle,
       text:canStyle ? '部屋の見た目を変える（名前・色・キャラ）' : '見た目はオーナーだけが変えられます', onclick:function(){
       close(); window.DARAStampUI.openRoomStyle(G, function(){ if(info) info(); });
     }}));

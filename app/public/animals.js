@@ -3,6 +3,8 @@
 'use strict';
 var S = window.DARAStamp;
 var NAMES = ['ゴリラ', 'くま', 'うさぎ', 'ねこ', 'きつね', 'ペンギン'];
+var KEYS = ['gorilla', 'bear', 'rabbit', 'cat', 'fox', 'penguin'];   // 画像は /animals/<key>.webp（無ければ SVG で代用）
+var missing = {};
 var PEARL = '#fff7ee';
 var uid = 0;
 
@@ -79,8 +81,20 @@ function kindOf(g){
 function render(kind, tint, size, bob){
   var el = document.createElement('span');
   el.className = 'achar' + (bob ? ' bob' : '');
-  el.style.cssText = 'width:' + size + 'px;height:' + Math.round(size * .85) + 'px';
-  el.innerHTML = build(kind, tint);
+  function useSvg(){
+    el.classList.remove('photo'); el.style.cssText = 'width:' + size + 'px;height:' + Math.round(size * .85) + 'px'; el.innerHTML = build(kind, tint);
+  }
+  if(missing[kind]){ useSvg(); return el; }
+  var src = '/animals/' + KEYS[kind] + '.webp?v=1';
+  el.classList.add('photo'); el.style.cssText = 'width:' + size + 'px';
+  var im = document.createElement('img'); im.src = src; im.alt = ''; im.draggable = false; im.decoding = 'async';
+  im.onerror = function(){ missing[kind] = true; useSvg(); };
+  el.appendChild(im);
+  if(S.hexOk(tint)){
+    var t = document.createElement('i'); t.className = 'atint';
+    t.style.cssText = 'background:' + tint + ';-webkit-mask-image:url(' + src + ');mask-image:url(' + src + ')';
+    el.appendChild(t);
+  }
   return el;
 }
 function forRoom(g, size, bob){ return render(kindOf(g), g.acolor || null, size, bob); }
