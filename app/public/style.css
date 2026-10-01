@@ -480,3 +480,24 @@ mark{background:rgba(255,225,120,.35); color:inherit; border-radius:4px; padding
 .banner .back{align-self:flex-start}
 .banner>.bdesc,.banner>h1{align-self:flex-start}
 .bfoot{align-self:stretch}
+
+/* opening animation (every visit) */
+#intro{position:fixed; inset:0; z-index:100; background:#050506; display:grid; place-items:center; overflow:hidden; transition:opacity .6s ease}
+#intro.out{opacity:0; pointer-events:none}
+#intro .ibox{position:relative; width:min(78vw,340px); height:260px; display:grid; place-items:center}
+.ipearl{position:absolute; left:50%; top:50%; width:46px; height:46px; margin:-23px 0 0 -23px; border-radius:50%;
+  background:radial-gradient(circle at 32% 28%,#fff 0 12%,#f1ecfa 30%,#cfc6e6 62%,#9d93bd);
+  box-shadow:0 0 30px rgba(255,255,255,.35),inset -4px -6px 10px rgba(120,110,160,.45);
+  animation:idrop 1.15s cubic-bezier(.5,0,.9,.5) both, ivanish .2s ease 1.05s forwards}
+@keyframes idrop{0%{transform:translateY(-70vh) scale(.8,1.25)}55%{transform:translateY(0) scale(1.1,.8)}68%{transform:translateY(-60px) scale(.95,1.08)}82%{transform:translateY(0) scale(1.15,.75)}100%{transform:translateY(0) scale(1)}}
+@keyframes ivanish{to{opacity:0; transform:scale(2.4)}}
+.iring{position:absolute; left:50%; top:50%; width:40px; height:40px; margin:-20px 0 0 -20px; border-radius:50%; border:2px solid rgba(255,255,255,.8); opacity:0; animation:iring 1s ease-out 1s both}
+.iring.r2{animation-delay:1.18s; border-color:rgba(190,175,255,.7)}
+@keyframes iring{0%{opacity:.9; transform:scale(.4)}100%{opacity:0; transform:scale(9)}}
+.pt{position:absolute; left:50%; top:50%; width:11px; height:11px; margin:-5px 0 0 -5px; border-radius:50%; background:radial-gradient(circle at 32% 28%,#fff,#cfc6e6 70%); opacity:0; animation:ipt .9s cubic-bezier(.2,.8,.3,1) 1.05s both}
+@keyframes ipt{0%{opacity:1; transform:rotate(calc(var(--a)*1deg)) translateX(0) scale(1)}100%{opacity:0; transform:rotate(calc(var(--a)*1deg)) translateX(150px) scale(.3)}}
+.iword{position:relative; width:100%; opacity:0; animation:iword .9s cubic-bezier(.2,1.4,.4,1) 1.1s both}
+.iword img{display:block; width:100%; height:auto; filter:drop-shadow(0 12px 30px rgba(180,170,255,.25))}
+@keyframes iword{0%{opacity:0; transform:scale(.3,.1)}45%{opacity:1; transform:scale(1.12,.86)}70%{transform:scale(.96,1.06)}100%{opacity:1; transform:none}}
+@keyframes ibright{0%,100%{filter:drop-shadow(0 12px 30px rgba(180,170,255,.25)) brightness(1)}50%{filter:drop-shadow(0 12px 40px rgba(200,190,255,.6)) brightness(1.35)}}
+.iword img{animation:ibright .9s ease 1.9s both}
