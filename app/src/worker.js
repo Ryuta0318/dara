@@ -24,7 +24,7 @@ class HttpError extends Error {
   }
 }
 const bad = (m = "bad_request") => new HttpError(400, m);
-const pub = (u) => (u ? { id: u.id, handle: u.handle, name: u.name, color: u.color, avatar: u.avatar || null, bio: u.bio || "" } : null);
+const pub = (u) => (u ? { id: u.id, handle: u.handle, name: u.name, color: u.color, avatar: u.avatar || null, bio: u.bio || "", animal: u.animal === null || u.animal === undefined ? null : u.animal } : null);
 const pair = (a, b) => (a < b ? [a, b] : [b, a]);
 const str = (v, max) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 
@@ -136,6 +136,7 @@ export class Hub extends DurableObject {
       "ALTER TABLE comments ADD COLUMN edited INTEGER",
       "ALTER TABLE users ADD COLUMN bio TEXT",
       "ALTER TABLE users ADD COLUMN hide_read INTEGER DEFAULT 0",
+      "ALTER TABLE users ADD COLUMN animal INTEGER",
       "ALTER TABLE users ADD COLUMN recovery TEXT",
       "ALTER TABLE threads ADD COLUMN pinned INTEGER DEFAULT 0",
       "ALTER TABLE threads ADD COLUMN poll TEXT",
@@ -200,7 +201,7 @@ export class Hub extends DurableObject {
     const m = (req.headers.get("cookie") || "").match(/(?:^|;\s*)sr=([a-f0-9]{48})/);
     if (!m) return null;
     const s = this.one("SELECT uid FROM sessions WHERE tok=?", await sha(m[1]));
-    return s ? this.one("SELECT id,handle,name,color,avatar,bio,hide_read FROM users WHERE id=?", s.uid) : null;
+    return s ? this.one("SELECT id,handle,name,color,avatar,bio,animal,hide_read FROM users WHERE id=?", s.uid) : null;
   }
 
   async startSession(uid) {
@@ -212,7 +213,7 @@ export class Hub extends DurableObject {
   users(ids) {
     const u = [...new Set(ids.filter(Boolean))].slice(0, 200);
     if (!u.length) return {};
-    const rows = this.q(`SELECT id,handle,name,color,avatar,bio FROM users WHERE id IN (${u.map(() => "?").join(",")})`, ...u);
+    const rows = this.q(`SELECT id,handle,name,color,avatar,bio,animal FROM users WHERE id IN (${u.map(() => "?").join(",")})`, ...u);
     const o = {};
     rows.forEach((r) => (o[r.id] = pub(r)));
     return o;
@@ -452,8 +453,9 @@ export class Hub extends DurableObject {
         this.run("UPDATE users SET avatar=? WHERE id=?", a, me.id);
       }
       if (b.bio !== undefined) this.run("UPDATE users SET bio=? WHERE id=?", str(typeof b.bio === "string" ? b.bio.replace(/[\r\n]+/g, " ") : "", 80), me.id);
+      if (b.animal !== undefined) this.run("UPDATE users SET animal=? WHERE id=?", b.animal === null ? null : cInt(b.animal, 0, 15, 0), me.id);
       if (b.hideRead !== undefined) this.run("UPDATE users SET hide_read=? WHERE id=?", b.hideRead ? 1 : 0, me.id);
-      return json({ me: this.selfOut(this.one("SELECT id,handle,name,color,avatar,bio,hide_read FROM users WHERE id=?", me.id)) });
+      return json({ me: this.selfOut(this.one("SELECT id,handle,name,color,avatar,bio,animal,hide_read FROM users WHERE id=?", me.id)) });
     }
 
     // ---- パスワード ----
@@ -511,14 +513,14 @@ export class Hub extends DurableObject {
       const q = str(url.searchParams.get("q") || "", 30).replace(/[\\%_]/g, "").replace(/^@/, "");
       if (q.length < 2) return json({ users: [] });
       const rows = this.q(
-        "SELECT id,handle,name,color,avatar,bio FROM users WHERE id!=? AND (handle LIKE ? ESCAPE '\\' OR name LIKE ? ESCAPE '\\') ORDER BY handle LIMIT 12",
+        "SELECT id,handle,name,color,avatar,bio,animal FROM users WHERE id!=? AND (handle LIKE ? ESCAPE '\\' OR name LIKE ? ESCAPE '\\') ORDER BY handle LIMIT 12",
         me.id, q.toLowerCase() + "%", "%" + q + "%"
       );
       return json({ users: rows.filter((u) => !this.blockedPair(me.id, u.id)).map(pub) });
     }
     // 友達追加リンク / QR から開いたときの相手の確認用
     if ((m = path.match(/^\/api\/u\/([a-z0-9_]{3,20})$/)) && M === "GET") {
-      const u = this.one("SELECT id,handle,name,color,avatar,bio FROM users WHERE handle=?", m[1]);
+      const u = this.one("SELECT id,handle,name,color,avatar,bio,animal FROM users WHERE handle=?", m[1]);
       if (!u || this.blockedPair(me.id, u.id)) throw new HttpError(404, "not_found");
       return json({ user: pub(u), rel: this.relation(me.id, u.id), blocked: this.blockedByMe(me.id, u.id) });
     }
@@ -1169,7 +1171,7 @@ export class Hub extends DurableObject {
     const recovery = makeRecovery();
     this.run("UPDATE users SET recovery=? WHERE id=?", await sha("rc:" + normRecovery(recovery)), id);
     const cookie = await this.startSession(id);
-    return json({ me: this.selfOut(this.one("SELECT id,handle,name,color,avatar,bio,hide_read FROM users WHERE id=?", id)), recovery }, 200, { "set-cookie": cookie });
+    return json({ me: this.selfOut(this.one("SELECT id,handle,name,color,avatar,bio,animal,hide_read FROM users WHERE id=?", id)), recovery }, 200, { "set-cookie": cookie });
   }
 
   async login(req) {
@@ -1209,6 +1211,6 @@ export class Hub extends DurableObject {
     this.run("UPDATE users SET pw=?, salt=?, recovery=? WHERE id=?", await pbkdf(pw, salt), salt, await sha("rc:" + normRecovery(code)), u.id);
     this.run("DELETE FROM sessions WHERE uid=?", u.id);
     const cookie = await this.startSession(u.id);
-    return json({ me: this.selfOut(this.one("SELECT id,handle,name,color,avatar,bio,hide_read FROM users WHERE id=?", u.id)), recovery: code }, 200, { "set-cookie": cookie });
+    return json({ me: this.selfOut(this.one("SELECT id,handle,name,color,avatar,bio,animal,hide_read FROM users WHERE id=?", u.id)), recovery: code }, 200, { "set-cookie": cookie });
   }
 }

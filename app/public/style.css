@@ -682,3 +682,41 @@ mark{background:rgba(255,225,120,.35); color:inherit; border-radius:4px; padding
 .post{background:var(--card); border-radius:26px; padding:14px 14px 10px; margin:10px 0; border-bottom:0; box-shadow:inset 0 1px 0 var(--edge),inset 0 0 0 1px var(--line)}
 .entry{background:var(--card2,var(--card)); box-shadow:inset 0 0 0 1px var(--line)}
 .wcard.big .wname{font-size:30px; padding-right:26px}
+
+/* アバター（どうぶつ）・プロフィール・設定・DM */
+.avanimal{--s:44px; width:var(--s); height:var(--s); border-radius:50%; flex:none; display:grid; place-items:end center; overflow:hidden;
+  background:radial-gradient(circle at 30% 25%,var(--l),var(--c) 70%,var(--d)); box-shadow:inset 0 2px 0 rgba(255,255,255,.7),0 0 0 1px rgba(255,255,255,.18)}
+.avanimal .achar{margin-bottom:-6%}
+.avanimal .achar img{filter:none}
+.pfTop{text-align:center; padding:6px 0 4px}
+.pfAv{position:relative; display:inline-block; padding:10px}
+.pfRing{position:relative; padding:8px; border-radius:50%; background:linear-gradient(145deg,#ffd3e6,#ff9ec6); box-shadow:0 0 40px rgba(255,150,200,.45),inset 0 2px 0 rgba(255,255,255,.8)}
+.pfRing .avanimal,.pfRing .avimg,.pfRing .orb{display:grid}
+.pfCam{position:absolute; right:2px; bottom:4px; width:42px; height:42px; border-radius:50%; display:grid; place-items:center; background:#2a2531; color:#fff; box-shadow:0 0 0 3px #0f0e13; cursor:pointer}
+.sp{position:absolute; font-style:normal; color:#ffd3e6; text-shadow:0 0 12px #ff9ec6; animation:twinkle 2.4s ease-in-out infinite}
+.sp.s1{left:-6px; top:18px; font-size:30px}.sp.s2{right:-2px; top:34px; font-size:34px; animation-delay:.6s}.sp.s3{left:6px; bottom:30px; font-size:22px; animation-delay:1.2s}
+@keyframes twinkle{0%,100%{transform:scale(.7) rotate(0); opacity:.5}50%{transform:scale(1.15) rotate(20deg); opacity:1}}
+.pfName{font-size:24px; font-weight:900; margin-top:2px}
+.pfId{color:var(--sub); font-weight:700; margin-bottom:12px}
+.pfStats{display:flex; gap:10px; margin-top:12px}
+.pfStat{flex:1; display:flex; align-items:center; gap:12px; padding:14px; border-radius:24px; background:var(--card); box-shadow:inset 0 0 0 1px var(--line)}
+.pfStat .si{font-size:26px}.pfStat small{display:block; color:var(--sub); font-weight:700; font-size:12px}.pfStat b{font-size:22px}
+.iconGrid{display:grid; grid-template-columns:repeat(3,1fr); gap:10px}
+.iconCell{display:grid; place-items:center; padding:12px 4px 8px; border-radius:22px; background:var(--card); box-shadow:inset 0 0 0 1px var(--line); cursor:pointer}
+.iconCell.on{box-shadow:inset 0 0 0 2.5px #ff8fb3}
+.menurow.plain{background:none; box-shadow:none; margin:0; border-radius:16px}
+.menurow.plain + .menurow.plain{border-top:1px solid var(--line); border-radius:0 0 16px 16px}
+.menurow.danger{color:#ff7a8d}
+.menurow .mi{width:30px; text-align:center; font-size:18px}
+.swrowL{display:flex; align-items:center; gap:12px}
+.swrowL .mtt{flex:1}.swrowL small{display:block; color:var(--sub); font-size:12px; font-weight:600; margin-top:2px}
+.toggle{width:52px; height:30px; border-radius:15px; background:#3a3744; position:relative; flex:none; cursor:pointer; transition:background .25s}
+.toggle i{position:absolute; top:3px; left:3px; width:24px; height:24px; border-radius:50%; background:#fff; transition:transform .3s cubic-bezier(.3,1.5,.5,1); box-shadow:0 2px 4px rgba(0,0,0,.4)}
+.toggle.on{background:linear-gradient(#b9a6f0,#8d78e0)}
+.toggle.on i{transform:translateX(22px)}
+.authAnimal{display:flex; justify-content:center; margin:14px 0 4px}
+.authHead{font-size:22px; font-weight:900; line-height:1.4; margin:2px 0 20px; text-wrap:balance}
+.dmpage .tbar{display:flex; align-items:center; gap:10px}
+.dm .bub{background:#2a2733; border-radius:22px 22px 22px 6px; padding:10px 14px}
+.dm.me .bub{background:linear-gradient(#e6dcff,#cdbcf7); color:#1b1626; border-radius:22px 22px 6px 22px}
+.dmhead b{font-size:17px}

@@ -187,6 +187,10 @@ function avatar(id, size){
   var u = user(id);
   if(u.avatar) return h('img', {class:'avimg', src:imgUrl(u.avatar), alt:'', style:'--s:' + size + 'px'});
   var pal = (u.color || 0) % 6;
+  if(typeof u.animal === 'number' && u.animal >= 0 && u.animal < window.DARAAnimal.NAMES.length){
+    var p = S.palOf(u.color || 0);
+    return h('div', {class:'avanimal', style:'--s:' + size + 'px;--c:' + p.c + ';--l:' + p.l + ';--d:' + p.d, 'aria-hidden':'true'}, window.DARAAnimal.render(u.animal, null, Math.round(size * 0.92)));
+  }
   return h('div', {class:'orb av pal' + pal + (pal === 3 ? ' p3' : ''), style:'--s:' + size + 'px', 'aria-hidden':'true'}, (u.name || '?').trim().charAt(0).toUpperCase());
 }
 function tilt(el){
@@ -541,11 +545,16 @@ function authView(){
         if(r.recovery) setTimeout(function(){ recoverySheet(r.recovery, '復旧コードを保存してください'); }, 300);
       }catch(x){ err.textContent = errMsg(x); btn.disabled = false; }
     });
-    var hb = h('div', {class:'hero3d tall'});
-    box.appendChild(hb);
-    if(killHero) killHero();
-    killHero = mountHero(hb);
-    box.appendChild(h('div', {class:'tag', text:'友達だけのスレッドをつくろう'}));
+    if(killHero){ killHero(); killHero = null; }
+    if(signup){
+      box.appendChild(h('div', {class:'authAnimal'}, window.DARAAnimal.render(0, null, 210, true)));
+      box.appendChild(h('div', {class:'authHead', text:'友達だけの特別な部屋をつくりましょう'}));
+    }else{
+      var hb = h('div', {class:'hero3d tall'});
+      box.appendChild(hb);
+      killHero = mountHero(hb);
+      box.appendChild(h('div', {class:'tag', text:'友達だけのスレッドをつくろう'}));
+    }
     if(pending) box.appendChild(h('div', {class:'hint', style:'text-align:center', text:'登録またはログインすると、招待の続きが開きます'}));
     box.appendChild(form);
     if(!signup) box.appendChild(h('div', {class:'swap'}, h('button', {type:'button', text:'パスワードを忘れた方', onclick:resetSheet})));
@@ -559,39 +568,60 @@ function authView(){
 
 /* ---------- profile ---------- */
 function profileSheet(){
-  var me = st.me;
+  var me = st.me, nums = {f:'-', g:'-'};
   var nameIn = h('input', {class:'field', type:'text', value:me.name, maxlength:'20', 'aria-label':'表示名'});
-  var av = h('div', {style:'display:flex;align-items:center;gap:14px'});
+  var bioIn = h('textarea', {class:'ta', rows:2, maxlength:'80', placeholder:'ひとこと自己紹介', 'aria-label':'自己紹介', style:'width:100%'});
+  bioIn.value = me.bio || '';
+  var top = h('div', {class:'pfTop'}), stats = h('div', {class:'pfStats'});
   var file = h('input', {type:'file', accept:'image/*', hidden:true});
-  function drawAv(){
-    av.innerHTML = '';
-    av.appendChild(avatar(me.id, 64));
-    av.appendChild(h('div', null, h('div', {style:'font-weight:900', text:me.name}), h('div', {class:'hint', text:'@' + me.handle})));
+  function oneUser(u){ var m = {}; m[u.id] = u; return m; }
+  function drawTop(){
+    top.innerHTML = '';
+    var ring = h('div', {class:'pfRing'}, avatar(me.id, 150), h('button', {type:'button', class:'pfCam', 'aria-label':'写真からアイコンにする', onclick:function(){ file.click(); }}, svgPhoto()));
+    top.appendChild(h('div', {class:'pfAv'}, h('i', {class:'sp s1', text:'✦'}), h('i', {class:'sp s2', text:'✦'}), h('i', {class:'sp s3', text:'✦'}), ring));
+    top.appendChild(h('div', {class:'pfName', text:me.name}));
+    top.appendChild(h('div', {class:'pfId', text:'@' + me.handle}));
+    stats.innerHTML = '';
+    stats.appendChild(h('div', {class:'pfStat'}, h('span', {class:'si', text:'👥'}), h('div', null, h('small', {text:'友達'}), h('b', {text:nums.f}))));
+    stats.appendChild(h('div', {class:'pfStat'}, h('span', {class:'si', text:'🏠'}), h('div', null, h('small', {text:'部屋'}), h('b', {text:nums.g}))));
   }
-  drawAv();
+  drawTop();
+  Promise.all([api('/api/friends'), api('/api/groups')]).then(function(r){ nums.f = r[0].friends.length; nums.g = r[1].groups.length; drawTop(); }).catch(function(){});
   file.addEventListener('change', async function(){
     var f = file.files[0]; file.value = ''; if(!f) return;
     try{
       var im = await shrink(f, 400, 0.85);
       var ids = await uploadAll([im]);
       var r = await api('/api/me', {body:{avatar:ids[0]}});
-      st.me = r.me; me = r.me; cacheUsers(oneUser(me)); drawAv(); toast('アイコンを変えました');
+      st.me = r.me; me = r.me; cacheUsers(oneUser(me)); drawTop(); toast('アイコンを変えました');
     }catch(e){ toast(errMsg(e)); }
   });
-  function oneUser(u){ var m = {}; m[u.id] = u; return m; }
-  var bioIn = h('textarea', {class:'ta', rows:2, maxlength:'80', placeholder:'ひとこと自己紹介', 'aria-label':'自己紹介', style:'width:100%'});
-  bioIn.value = me.bio || '';
+  function pickIcon(){
+    var c, g = h('div', {class:'iconGrid'});
+    window.DARAAnimal.NAMES.forEach(function(n, i){
+      g.appendChild(h('button', {type:'button', class:'iconCell' + (me.animal === i && !me.avatar ? ' on' : ''), 'aria-label':n, onclick:async function(){
+        try{ var r = await api('/api/me', {body:{animal:i, avatar:null}}); st.me = r.me; me = r.me; cacheUsers(oneUser(me)); drawTop(); c(); toast('アイコンを変えました'); }catch(e){ toast(errMsg(e)); }
+      }}, window.DARAAnimal.render(i, null, 74)));
+    });
+    var box = h('div', null, g,
+      h('button', {type:'button', class:'b3 soft block', style:'margin-top:12px', text:'写真から選ぶ', onclick:function(){ c(); file.click(); }}),
+      me.avatar || typeof me.animal === 'number' ? h('button', {type:'button', class:'ghost', text:'もとのイニシャルにもどす', onclick:async function(){
+        try{ var r = await api('/api/me', {body:{animal:null, avatar:null}}); st.me = r.me; me = r.me; cacheUsers(oneUser(me)); drawTop(); c(); }catch(e){ toast(errMsg(e)); }
+      }}) : null);
+    c = openSheet('アイコンを選ぶ', box);
+  }
   var save = h('button', {type:'button', class:'b3 block', style:'margin-top:14px', text:'保存する', onclick:async function(){
-    try{ var r = await api('/api/me', {body:{name:nameIn.value, bio:bioIn.value}}); st.me = r.me; me = r.me; cacheUsers(oneUser(me)); drawAv(); toast('保存しました'); }catch(e){ toast(errMsg(e)); }
+    try{ var r = await api('/api/me', {body:{name:nameIn.value, bio:bioIn.value}}); st.me = r.me; me = r.me; cacheUsers(oneUser(me)); drawTop(); toast('保存しました'); }catch(e){ toast(errMsg(e)); }
   }});
-  var box = h('div', null, av,
-    h('button', {type:'button', class:'b3 soft sm', style:'margin-top:12px', text:'アイコンを選ぶ', onclick:function(){ file.click(); }}), file,
-    h('div', {class:'lbl', text:'表示名'}), nameIn, h('div', {class:'lbl', text:'自己紹介'}), bioIn, save,
-    h('button', {type:'button', class:'b3 soft block', style:'margin-top:10px', text:'設定（通知・既読・ブロック・パスワード）', onclick:function(){ close(); settingsSheet(); }}),
-    h('button', {type:'button', class:'b3 soft block', style:'margin-top:14px;color:var(--danger)', text:'ログアウト', onclick:async function(){
-      try{ await api('/api/logout', {body:{}}); }catch(e){}
-      st.me = null; close(); location.hash = '#/'; render();
-    }}));
+  var box = h('div', null, top,
+    h('div', {class:'panel'}, h('div', {class:'lbl', style:'margin-top:0', text:'表示名'}), nameIn, h('div', {class:'lbl', text:'自己紹介'}), bioIn), stats,
+    h('button', {type:'button', class:'b3 soft block', style:'margin-top:12px', text:'アイコンを選ぶ', onclick:pickIcon}), file, save,
+    h('div', {class:'panel', style:'margin-top:16px;padding:4px 6px'},
+      h('button', {type:'button', class:'menurow plain', onclick:function(){ close(); settingsSheet(); }}, h('span', {class:'mi', text:'⚙'}), h('span', {class:'mtt', text:'設定'}), h('span', {class:'chev', text:'›'})),
+      h('button', {type:'button', class:'menurow plain danger', onclick:async function(){
+        try{ await api('/api/logout', {body:{}}); }catch(e){}
+        st.me = null; close(); location.hash = '#/'; render();
+      }}, h('span', {class:'mi', text:'⇥'}), h('span', {class:'mtt', text:'ログアウト'}), h('span', {class:'chev', text:'›'}))));
   var close = openSheet('プロフィール', box);
 }
 
@@ -796,11 +826,9 @@ function settingsSheet(){
   function draw(){
     box.innerHTML = '';
     pushSection(box);
-    box.appendChild(h('div', {class:'lbl', text:'メッセージの既読'}));
-    box.appendChild(h('div', {class:'hint', text:'相手に「既読」を見せるか選べます（見せないときは、相手の既読も見えません）'}));
-    box.appendChild(h('div', {class:'chips'},
-      h('button', {type:'button', class:'chip' + (!me.hideRead ? ' on' : ''), text:'見せる', onclick:function(){ setRead(false); }}),
-      h('button', {type:'button', class:'chip' + (me.hideRead ? ' on' : ''), text:'見せない', onclick:function(){ setRead(true); }})));
+    box.appendChild(h('div', {class:'panel'},
+      h('div', {class:'swrowL'}, h('span', {class:'mi', text:'👁'}), h('div', {class:'mtt'}, h('b', {text:'メッセージの既読'}), h('small', {text:'読んだことを相手に表示します（オフだと、相手の既読も見えません）'})),
+        h('button', {type:'button', class:'toggle' + (!me.hideRead ? ' on' : ''), role:'switch', 'aria-checked':!me.hideRead ? 'true' : 'false', 'aria-label':'既読を表示', onclick:function(){ setRead(!me.hideRead); }}, h('i')))));
     box.appendChild(h('div', {class:'lbl', text:'ブロックしている人'}));
     var bl = h('div', null, h('div', {class:'hint', text:'読み込み中'}));
     box.appendChild(bl);
